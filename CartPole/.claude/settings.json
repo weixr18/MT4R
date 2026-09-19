@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python src-rl/1_reinforce.py --env cartpole)",
+      "Bash(python src-rl/1_reinforce.py --env pendulum)"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+*.vscode/*
+*.code-workspace
+__pycache__/
+*.pyc
+*.gz
+
+# CartPole 训练产物：文件保留在本地，不纳入版本控制
+CartPole/res/
+CartPole/src-rl/res/
+*.pth
+*.log

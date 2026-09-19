@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: REINFORCE (cartpole)",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "program": "1_reinforce.py",
+            "args": ["--env", "cartpole"],
+            "cwd": "${workspaceFolder}\\src-rl"
+        }
+    ]
+}

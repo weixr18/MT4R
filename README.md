@@ -52,6 +52,22 @@ Furthermore, this book clearly outlines over 60 related technical problems. Prob
 I believe this book will provide a unique experience and become a valuable assistant in your work and studies ヽ(●´∀`●)ﾉ
 
 
+## 配套代码 / Supporting Code
+
+本书配套代码位于本仓库两个顶层目录：
+
+The book's supporting code lives in two top-level directories of this repository:
+
+| 目录 / Directory | 内容 / Contents |
+|---|---|
+| `Codes/` | 按书章节组织的算法实现（`chap<部分>_<小节>_<主题>/`），覆盖 Part I–VII：最优化、插值、运动学、动力学、滤波器、LQR、深度学习、强化学习、视觉导航等 / Chapter-by-chapter algorithm implementations (`chap<part>_<section>_<topic>/`) covering Parts I–VII: optimization, interpolation, kinematics, dynamics, filters, LQR, deep learning, reinforcement learning, visual navigation. |
+| `CartPole/` | Part VIII（一阶倒立摆）配套仿真与控制实验代码：经典控制（随机 / PID / 连续与离散 LQR / MPC / DDP / iLQR）与强化学习（REINFORCE、Actor-Critic、PPO 系列），含统一评估与训练脚本 / Supporting simulation and control experiments for Part VIII (first-order inverted pendulum): classical control (random / PID / continuous & discrete LQR / MPC / DDP / iLQR) and reinforcement learning (REINFORCE, Actor-Critic, PPO variants), with unified evaluation and training scripts. |
+
+`Codes/` 中的实现与书中算法框、公式一一对应（见各章节正文的代码块）；`CartPole/` 的目录结构、运行方式与已知问题见 `CartPole/AGENTS.md`。`CartPole/res/`、`CartPole/src-rl/res/` 下的训练产物（模型权重、训练日志等）保留在本地、不纳入版本控制。
+
+Implementations under `Codes/` correspond one-to-one with the algorithm boxes and formulas in the book. For the structure, usage, and known issues of `CartPole/`, see `CartPole/AGENTS.md`. Training artifacts under `CartPole/res/` and `CartPole/src-rl/res/` (model weights, training logs, etc.) are kept locally and are not version-controlled.
+
+
 ## Feedback and Sharing / 反馈与分享
 
 本书的**中/英文PDF版本**(已完成部分预览版)和**配套代码**(已完成部分)已发布于本仓库，**欢迎大家下载阅读&讨论&提各种意见建议**！如果您觉得有帮助，可以给我一个星星⭐，非常感谢！
