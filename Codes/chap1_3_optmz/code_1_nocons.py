@@ -76,7 +76,7 @@ def opt_nc_conj_grad(f_func, df_func, x_0, epsilon=1e-4, n:int=10):
             break
         t = - grad
         if k % n != 0:
-            t += grad_norm / last_grad_norm * last_t
+            t += (grad_norm / last_grad_norm)**2 * last_t
         h = GR_line_search(f_func, x_k, t)
         x_k = x_k + h * t
         last_t, last_grad_norm = t, grad_norm

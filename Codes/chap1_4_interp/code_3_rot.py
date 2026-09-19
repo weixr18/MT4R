@@ -25,10 +25,10 @@ def vec_to_q(vec):
 
 
 def Quadratic_spline_sample_q(xs, qs, N, M):
-    assert xs.shape == (N,)
-    assert qs.shape == (N, 4)
-    a, b, vecs = np.min(xs), np.max(xs), np.zeros([N, 3])
-    for i in range(N):
+    assert xs.shape == (N+1,)                # N+1 个采样点 -> N 段
+    assert qs.shape == (N+1, 4)
+    a, b, vecs = np.min(xs), np.max(xs), np.zeros([N+1, 3])
+    for i in range(N+1):
         vecs[i] = q_to_vec(qs[i])
     new_xs = np.linspace(a, b, num=M, endpoint=True)
     new_vecs, new_qs = np.zeros([M, 3]), np.zeros([M, 4])

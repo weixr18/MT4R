@@ -28,7 +28,7 @@ class MLP_BN:
             self.bz_s.append(bz_l)
             if is_train:
                 mu_l = np.mean(bz_l, axis=0)
-                sig_l = np.var(bz_l, axis=0, ddof=1)
+                sig_l = np.var(bz_l, axis=0)
                 self.params["mu"][l], self.params["sig"][l] = mu_l, sig_l
                 self.params["mu_all"][l] = mo * self.params["mu_all"][l] + (1-mo) * mu_l
                 self.params["sig_all"][l] = mo * self.params["sig_all"][l] + (1-mo) * sig_l

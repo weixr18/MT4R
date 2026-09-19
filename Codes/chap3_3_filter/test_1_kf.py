@@ -6,7 +6,7 @@ from code_kfs import filter_KF_disc
 def generate_test_data(N, A, B, C, x_0, true_acc, n_x, n_z):
     x = x_0
     xs_true = [x.copy()]
-    zs = []
+    zs = []   # 0 起始、不加冗余前导：zs[k] 即第 k 步施加 us[k] 一步预测后取得的量测
     us = []
     for _ in range(N):
         u = np.array([[true_acc]]) + np.random.randn(1, 1) * 0.1  # add small noise to control
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     x_0 = np.array([[0], [0]])
     P_0 = np.eye(2) * 1.0
     Qs = [np.eye(2) * n_x**2 for _ in range(N_K)]
-    Rs = [np.eye(1) * n_z**2 for _ in range(N_K)]
+    Rs = [np.eye(1) * n_z**2 for _ in range(N_K)]   # 长度 N_K，Rs[k] 与第 k 步量测一一对应
 
     us, zs, xs_true = generate_test_data(
         N_K, A, B, C, x_0, true_acc, n_x, n_z

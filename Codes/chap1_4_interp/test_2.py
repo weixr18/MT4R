@@ -7,8 +7,8 @@ def test_quadratic_spline():
     # func = lambda x: x**2 - 0.5 * x**2 + 2
     # func = lambda x: -0.1 * x**3 + 0.5 * x**2 + 2
     func = np.sin
-    N = 50
-    xs = np.linspace(0, 2 * np.pi, N)
+    N = 49  # N 段、N+1 个点（首尾即区间边缘）
+    xs = np.linspace(0, 2 * np.pi, N + 1)
     # print("xs:", xs)
     ys = func(xs).reshape(-1, 1)
     M = 200

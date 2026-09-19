@@ -5,9 +5,9 @@ from code_1_quad import Quadratic_spline_sample
 # 测试函数
 def test_quadratic_spline():
     func = np.cos
-    # 原始采样点
-    N = 30
-    xs = np.linspace(0, 2 * np.pi, N, endpoint=True)
+    # 原始采样点：N 段、N+1 个点（首尾即区间边缘）
+    N = 29
+    xs = np.linspace(0, 2 * np.pi, N + 1, endpoint=True)
     print("xs:", xs.shape)
     ys = func(xs).reshape(-1, 1)
     # 插值采样点

@@ -27,9 +27,9 @@ def generate_data(N_K):
     for u in us:
         x_trues.append(f_func(x_trues[-1], u))
     R_std = 0.05
-    zs = [x + np.random.randn() * R_std for x in x_trues[1:]]
+    zs = [x + np.random.randn() * R_std for x in x_trues[1:]]   # 0 起始、无冗余前导
     Qs = [np.array([[1e-4]]) for _ in range(N_K)]
-    Rs = [5 * np.array([[R_std**2]]) for _ in range(N_K)]
+    Rs = [5 * np.array([[R_std**2]]) for _ in range(N_K)]   # 长度 N_K，与 zs 一一对应
     return x_est_0, P_0, us, Qs, Rs, x_trues, zs
 
 

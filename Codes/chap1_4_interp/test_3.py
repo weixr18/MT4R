@@ -29,7 +29,7 @@ def visualize_quaternions(qs, title="Quaternion Rotation Visualization"):
 
 if __name__ == "__main__":
     xs, qs = generate_test_quaternions()
-    N = len(xs)
+    N = len(xs) - 1  # N 段、N+1 个采样点
     M = 100  # 插值点数量
     interp_qs = Quadratic_spline_sample_q(xs, qs, N, M)
     print("原始旋转点（粗线）:")

@@ -15,7 +15,7 @@ def opt_qp_barrier(H, g, M_eq, b_eq, M, b, x_0, lambda_b0=10,
         while True:
             def dL_b(x_ext, lbd_b):
                 x, lambda_ = x_ext[:n_x], x_ext[n_x:]
-                t = np.zeros_like(b)
+                t = np.zeros(n_x)   # 梯度累加器维度 = 变量数 n_x（M 行数 ≠ n_x 也成立）
                 for i in range(b.shape[0]):
                     t += M[i, :] / (b[i] - M[i:i+1, :] @ x)
                 L_x = H @ x + g + M_eq.T @ lambda_ + lbd_b * t
@@ -40,7 +40,6 @@ def opt_qp_barrier(H, g, M_eq, b_eq, M, b, x_0, lambda_b0=10,
             if J_func(x_ext_k) < epsilon_1:
                 break
         neq_gap = lambda_b * barrier(x_ext_k)
-        print(x_ext_k, lambda_b, neq_gap, h * momentum)
         if np.isnan(neq_gap):
             return x_last
         elif neq_gap < epsilon_2:

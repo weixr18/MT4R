@@ -41,10 +41,10 @@ def generate_data(N_K):
     Q = np.diag([0.01, 0.01])
     R = np.diag([0.1, 0.1])
     Qs = [Q for _ in range(N_K)]
-    Rs = [R for _ in range(N_K)]
+    Rs = [R for _ in range(N_K)]   # 长度 N_K，Rs[k] 与第 k 步量测一一对应（0 起始、无冗余前导）
     # 生成真实轨迹和观测值
     x_trues = [x_true]
-    zs = []
+    zs = []   # zs[k]：第 k 步施加 us[k] 一步预测后取得的量测
     for k in range(N_K):
         x_next = f_func(x_trues[-1], us[k]) + np.random.multivariate_normal([0, 0], Q)
         z_k = h_func(x_next) + np.random.multivariate_normal([0, 0], R)
@@ -52,14 +52,12 @@ def generate_data(N_K):
         zs.append(z_k)
     return x_0, P_0, us, Qs, Rs, x_trues, zs
 
-
 def visualize(x_trues, xs_est, zs):
     xs_est = np.array(xs_est)
     x_trues = np.array(x_trues)
     plt.figure(figsize=(10, 5))
     plt.plot(x_trues[:, 0], x_trues[:, 1], label='True Trajectory', color='blue')
     plt.plot(xs_est[:, 0], xs_est[:, 1], label='EKF Estimated Trajectory', color='red', linestyle='--')
-    plt.scatter([z[0]**0.5 for z in zs], [np.arcsin(z[1]) for z in zs], label='Measurements (inverted)', color='green', s=10)
     plt.xlabel('x[0]')
     plt.ylabel('x[1]')
     plt.legend()
@@ -68,13 +66,15 @@ def visualize(x_trues, xs_est, zs):
     plt.show()
 
 
-
 ############################# Test #############################
 
 
 if __name__ == "__main__":
-    N_K = 50
+    N_K = 500
     x_0, P_0, us, Qs, Rs, x_trues, zs = generate_data(N_K)
-    xs_est = filter_EKF(x_0, us, zs, f_func, df_func, h_func, dh_func, Qs, Rs, P_0, N_K)
+    xs_est = filter_EKF(
+        x_0, us, zs, f_func, df_func, 
+        h_func, dh_func, Qs, Rs, P_0, N_K
+    )
     visualize(x_trues, xs_est, zs)
 

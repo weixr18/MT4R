@@ -3,38 +3,36 @@ import matplotlib.pyplot as plt
 
 from code_kfs import filter_UKF
 np.random.seed(42)
+dt = 0.01
+def f_func(x, u):
+    return np.array([
+        x[0] + x[1] * dt,
+        x[1] - x[0] * 0.1
+    ])
+def h_func(x):
+    return np.array([
+        x[0] - x[1],
+        np.arctan(x[0])
+    ])
 
 def generate_data(N_K):
-    # 真实系统参数
-    dt = 0.1
-    x_0 = np.array([0.01, 0])  # 初始状态 [位置, 速度]
-    P_0 = np.diag([0.1, 0.1])  # 初始协方差
-    
-    # 过程噪声和观测噪声
-    Q = np.diag([0.01, 0.01])  # 过程噪声协方差
-    R = np.diag([0.01])  # 观测噪声协方差
-    
-    # 输入控制 (这里设为0，模拟自由运动)
+    x_0 = np.array([0.5, 1.0])  # 初始状态 [位置, 速度]
+    P_0 = np.diag([5.0, 5.0])  # 初始协方差
+    Q = np.diag([1e-1, 1e-1])  # 过程噪声协方差
+    R = np.diag([1e-2, 1e-2])  # 观测噪声协方差
     us = [np.array([[0.0]]) for _ in range(N_K)]
-    Qs = [Q for _ in range(N_K)]
-    Rs = [R for _ in range(N_K)]
-    
-    # 生成真实轨迹和观测数据
-    x_trues = [x_0]
-    zs = []
-    
+    x_trues, zs = [x_0], []
     for k in range(N_K):
-        # 非线性系统动态 (带有速度平方阻尼)
-        x_next = np.array([
-            [x_trues[-1][0] + x_trues[-1][1]*dt],
-            [x_trues[-1][1] - 0.1*x_trues[-1][1]**2*dt]
-        ]) + np.random.multivariate_normal([0,0], Q).reshape(2,1)
-        x_trues.append(x_next[:, 0])
-        # 非线性观测 (只观测位置，但带有非线性变换)
-        z = np.array(np.sin(x_next[0])) + np.random.rand() * np.sqrt(R[0,0])
+        x_next = f_func(x_trues[-1], us[-1])
+        x_trues.append(x_next)
+        z = h_func(x_next + np.random.multivariate_normal([0,0], Q))
+        z += np.random.multivariate_normal([0, 0], R)
         zs.append(z)
-    
+    Qs = [Q*100 for _ in range(N_K)]
+    Rs = [R*100 for _ in range(N_K)]
+    x_0 = x_0 + np.array([-0.1, 0.5])
     return x_0, P_0, us, Qs, Rs, x_trues, zs
+
 
 def visualize(x_trues, xs_est, zs):
     # 提取真实和估计的位置、速度
@@ -42,20 +40,15 @@ def visualize(x_trues, xs_est, zs):
     true_vel = [x[1] for x in x_trues]
     est_pos = [x[0] for x in xs_est]
     est_vel = [x[1] for x in xs_est]
-    obs_pos = [np.arcsin(z[0]) for z in zs]  # 反变换观测值
-    
     plt.figure(figsize=(12, 6))
-    
     # 位置图
     plt.subplot(1, 2, 1)
     plt.plot(true_pos, label='True Position')
     plt.plot(est_pos, '--', label='Estimated Position')
-    plt.plot(range(1, len(zs)+1), obs_pos, 'x', label='Observations')
     plt.xlabel('Time step')
     plt.ylabel('Position')
     plt.title('Position Estimation')
     plt.legend()
-    
     # 速度图
     plt.subplot(1, 2, 2)
     plt.plot(true_vel, label='True Velocity')
@@ -64,35 +57,18 @@ def visualize(x_trues, xs_est, zs):
     plt.ylabel('Velocity')
     plt.title('Velocity Estimation')
     plt.legend()
-    
     plt.tight_layout()
     plt.show()
 
+
 if __name__ == "__main__":
-    N_K = 50
-    
-    # 定义非线性函数
-    def f_func(x, u):
-        dt = 0.1
-        # 非线性动态模型 (带有速度平方阻尼)
-        return np.array([
-            x[0] + x[1]*dt,
-            x[1] - 0.1*x[1]**2*dt
-        ])
-    def h_func(x):
-        # 非线性观测模型 (sin函数)
-        return np.array([np.sin(x[0])])
-    
+    N_K = 500
     # UKF参数
-    alpha = 5
-    kappa = 1.0
-    beta = 8.0
-    
-    # 生成测试数据
+    alpha = 1.2 # similar to sigma of gaussian
+    beta = 2.0 # best for gaussian, most commonly used
+    kappa = 0.0 # suggested value and most commonly used
     x_0, P_0, us, Qs, Rs, x_trues, zs = generate_data(N_K)
-    
-    # 运行UKF滤波器
-    xs_est = filter_UKF(x_0, us, zs, f_func, h_func, Qs, Rs, P_0, alpha, kappa, beta, N_K)
-    
-    # 可视化结果
+    xs_est = filter_UKF(
+        x_0, us, zs, f_func, h_func, Qs, Rs, P_0, alpha, kappa, beta, N_K
+    )
     visualize(x_trues, xs_est, zs)
