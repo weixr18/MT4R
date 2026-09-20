@@ -7,5 +7,22 @@ __pycache__/
 # CartPole 训练产物：文件保留在本地，不纳入版本控制
 CartPole/res/
 CartPole/src-rl/res/
+
+# Robot-Control 实验产物与结果归档：保留在本地，不纳入版本控制
+# （res/ 是验证报告里数字的依据，勿删；详见 Robot-Control/res/README.md）
+Robot-Control/res/*
+
+# Robot-Control 验证报告：长期交付物，纳入版本控制。
+# 2026-09 起报告已由 res/report/ 迁到仓库顶层的 Robot-Control/report/，
+# 因此这里不再需要对 res/ 做 re-include。
+# 只忽略 LaTeX 中间产物与临时渲染目录；图（figs/*.png）与 PDF 入库。
+Robot-Control/report/*.aux
+Robot-Control/report/*.log
+Robot-Control/report/*.out
+Robot-Control/report/*.toc
+Robot-Control/report/*.bak
+Robot-Control/report/_png/
+Robot-Control/report/**/**.png
+
 *.pth
 *.log

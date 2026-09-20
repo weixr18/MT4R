@@ -1,0 +1,2754 @@
+%=======================================================================
+%  Part IV 运动控制算法的实现验证：实验报告
+%  编译：xelatex report.tex  （需连续编译两次以生成目录与交叉引用）
+%  图：./figs/*.png （20 张）
+%=======================================================================
+\documentclass[11pt,a4paper]{ctexart}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\usepackage{makecell}
+
+\geometry{left=2.4cm,right=2.4cm,top=2.6cm,bottom=2.6cm}
+\urlstyle{tt}
+
+\graphicspath{{figs/}}
+\captionsetup{font=small,labelfont=bf,skip=6pt}
+\captionsetup[table]{position=top}
+\setlength{\parskip}{4pt}
+\renewcommand{\arraystretch}{1.15}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newcolumntype{Y}{>{\centering\arraybackslash}p{2.2cm}}
+
+% 四个级别的“警示/强调”框
+\newtcolorbox{keybox}[1]{colback=blue!4,colframe=blue!45!black,
+  fonttitle=\bfseries,title=#1,boxrule=0.5pt,arc=2pt,
+  left=5pt,right=5pt,top=4pt,bottom=4pt,breakable}
+\newtcolorbox{warnbox}[1]{colback=orange!5,colframe=orange!60!black,
+  fonttitle=\bfseries,title=#1,boxrule=0.5pt,arc=2pt,
+  left=5pt,right=5pt,top=4pt,bottom=4pt,breakable}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Part IV 运动控制算法实现验证报告}
+\fancyhead[R]{\small v2.1}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% 摘要用带下标的英文上标
+\newcommand{\stage}[1]{\textsuperscript{#1}}
+
+\title{\bfseries Part IV 运动控制算法的实现验证\\[6pt]
+  \large 四个 JS/OS 重力补偿 PD 与逆动力学 PD 控制器的实验报告}
+\author{配套代码仓库 \path{4-MT4R-github/Robot-Control/}}
+\date{2026 年 9 月 20 日}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{fancy}
+
+\begin{center}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.6cm} p{12.9cm}@{}}
+\toprule
+报告性质 & 算法实现与验证实验报告（自包含；不依赖验证计划与运行日志即可读懂） \\
+报告版本 & v2.1（LaTeX 排版版；技术内容、全部实测数字与四项算法判定与 v2.0 一致） \\
+验证对象 & Part IV \textbf{运动控制} 4 个算法：JS/OS $\times$ 重力补偿 PD / 逆动力学 PD \\
+代码位置 & \path{4-MT4R-github/Robot-Control/} \\
+运行环境 & conda \texttt{py311-gym}（\texttt{PYTHONUTF8=1}）；实验二另用独立 env \texttt{py311-pin} \\
+完成度 & 实验一 7/7 $|$ 实验二 5 项 + 失配自检 $|$ 实验三 4/4 $|$ 实验四 6/6 $|$ 实验五 3/3 \\
+数据归档 & \texttt{res/\{model\_stage0, model\_stage1, 2r\_stage2, 6r\_stage3, 6r\_stage4\}/}（本报告每个数字的来源，逐字段索引见附录~\ref{app:archive}） \\
+图 & \texttt{report/figs/}（\textbf{20 张}：实验三 $\times$4、实验四 $\times$7、实验五 $\times$9；全文编号图~\ref{fig:kp2r}--图~\ref{fig:instab}） \\
+\bottomrule
+\end{tabular}%
+}
+\end{center}
+
+\begin{keybox}{阅读指引}
+第~\ref{sec:exp1}--\ref{sec:exp5}~节是五个实验，每个实验（及其实验内的每条判据）一律按
+\textbf{「验证什么（目标/假设）$\to$ 如何验证（设计与口径）$\to$ 结果（实测与图表）$\to$ 结论（判定与讨论）」}
+四段式组织，读者可任取一节独立阅读。所有图的说明文字都写在正文里（「如图~$X$~所示……」，图题只做最短标识），
+\textbf{第~\ref{sec:discuss}~节是必须读的一章}：负结果、未做项、执行期口径修订与局限声明都集中在那里，
+它决定「本报告的结论不能外推到哪些场合」。
+\end{keybox}
+
+\begin{warnbox}{交付边界（与 CartPole/Part VIII 不同）}
+本批次结果\textbf{不进书稿正文}——不改 \texttt{chap4\_*.tex}、不往 \texttt{1-MN4R/imgs/} 放图、
+不在正文回填实测数字、不重编 \texttt{main.pdf}。书侧只更新两处机读性标注：
+\texttt{2index.tex} 的 \texttt{\$\textbackslash dag\$} 与 \texttt{unfinished\_contents.md} 的清单。
+\end{warnbox}
+
+\vspace{4pt}
+\noindent\textbf{关键词：}机器人运动控制；重力补偿 PD 控制；逆动力学控制；操作空间控制；
+算法验证；交叉验证（Pinocchio）；零阶保持离散化；奇异位形；可复现性
+
+\begin{abstract}
+\noindent\textbf{背景与问题.}
+教科书（《Math Toolbox for Robotics》Part IV）给出了关节空间（JS）与操作空间（OS）两类重力补偿 PD 控制与
+逆动力学 PD 控制共 4 个算法框及其稳定性论证，并配有 Python 实现。「算法对不对」在控制领域是一个
+\textbf{容易被自证}的问题：若闭环仿真用同一套模型同时充当被控对象（plant）与控制器内部模型，
+则即使该模型本身有错，闭环误差动态也会「看起来完美」。因此本报告的任务不是「跑出一条漂亮曲线」，
+而是设计一套能把\textbf{模型错误、控制律错误、数值误差、离散化误差}彼此分离的证据链。
+
+\medskip\noindent\textbf{方法.}
+我们把验证拆成五个环环相扣的实验（对应实现的五个阶段）：\stage{1} 模型层内部自检（7 条判据）；
+\stage{2} 与权威实现 Pinocchio 4.1.0 的逐项交叉对拍（5 项 + 故意失配自检）；\stage{3} 平面 2R 臂上的
+端到端贯通（4 条判据）；\stage{4} 完整 6R 机械臂上的正式验证（6 条判据）；\stage{5} 鲁棒性与失效边界
+（3 条判据，含 6 个实验块）。贯穿全部实验的三条设计红线是：\textbf{（i）绝不让同一模型同时当 plant 与
+控制器模型（除有意标注的自洽用例外）；（ii）凡对拍必须校验「参照真的来自参照物」；（iii）凡指标必须
+校验「它真的承载了信息」。}每条判据都有明确的阈值、固定的随机种子与 20 组初值的统计口径，
+全部原始记录落盘于 \texttt{res/}。
+
+\medskip\noindent\textbf{结果.}
+实验一 7/7 通过；实验二 5 个对拍项全部达到机器精度
+（6R：FK $5.6\times10^{-16}$、$B$ $1.0\times10^{-15}$、$g$ $8.0\times10^{-16}$、
+$C\dot q$ $1.7\times10^{-9}$、$J_w$ $3.5\times10^{-16}$），
+且「质量 $+5\%$ 故意失配」被可靠检出（$8.7\times10^{-17}\to4.7\times10^{-2}$），
+\textbf{排除了「书模型自身出错」这一假阳性来源}；实验三 4/4、实验四 6/6、实验五 3/3 通过。
+实验四中最强的判据——逆动力学控制的\textbf{闭环误差动态}与设定 $(\xi,\omega_n)$ 的相对误差——
+最差仅 \textbf{1.2764\%}（阈值 2\%），且步长探针证明该偏差是\textbf{零阶保持 + RK4 的
+$O(dt)$ 离散化残差}，随 $dt$ 减半而减半（2.75\% $\to$ 1.28\% $\to$ 0.61\%）。
+JS/OS 分工比 \textbf{130.0$\times$ / 136.3$\times$}、6R 关节耦合抑制 \textbf{63.1$\times$}，
+为书中定性论断给出了定量证据。边界方面：OS 逆动力学在 $\sigma_{\min}(J_a)\le10^{-4}$ 上因
+$J_a^{-1}$ 放大而失效（反馈力矩 282.6 N$\cdot$m 超 200 N$\cdot$m 限），OS 重力补偿 PD 在
+$\sigma_{\min}\le5\times10^{-2}$ 上\textbf{推不动退化方向}——这两点落在书中\textbf{已声明}的
+「$J_a$ 列满秩」前提之外，是\textbf{前提的定量边界，不是书中的错误}。
+
+\medskip\noindent\textbf{发现的问题.}
+验证过程本身抓出并修复了 1 个真 bug（RK4 的 $q$ 更新只有一阶精度，全局经验收敛阶
+$1.000\to3.9926$）与 1 处测试自证（副本对拍拿到的「原件」其实是副本），据此新增了「积分器收敛阶」
+判据作为常设守卫；执行期共修订 20 处口径/实现问题（阈值一字未动），逐条列于第~\ref{sec:revisions}~节。
+同时如实报告了 12 条负结果或未达标项（如摩擦未补偿的 log-log 斜率只测到 $0.05$--$0.21$）、
+8 项未做测试及其原因，以及 8 条局限声明。
+
+\medskip\noindent\textbf{结论.}
+4 个算法的\textbf{控制律实现与书中公式一致}，并被独立的数值证据支持；
+两个 OS 算法的判定为「\textbf{在书中所声明前提内已验证}」。
+\end{abstract}
+
+\clearpage
+\tableofcontents
+\clearpage
+
+%=======================================================================
+\section{引言}
+%=======================================================================
+
+\subsection{研究背景与动机}
+
+配套代码仓库 \path{4-MT4R-github/Robot-Control/} 为教材 Part IV「机器人控制基础」提供运动控制算法的
+可运行实现与验证。这类验证有两个方法论上的陷阱：
+
+\begin{enumerate}[leftmargin=2em,itemsep=2pt]
+\item \textbf{自证陷阱.} 若闭环仿真的 plant 与控制器使用同一份动力学模型，则控制器中的 $B,C,g$
+  与被控对象中的同名项在采样点上\textbf{精确抵消}，误差动态恒为单位质量的理想二阶系统。
+  此时即使该模型整体写错（甚至符号反号），闭环表现依旧「完美」——验证退化为自证。
+  \textbf{因此「闭环误差很小」本身不是模型正确的证据。}
+\item \textbf{指标空转陷阱.} 若用来判定某个量的指标不承载信息（例如该量在记录里恒为 0），
+  判据会无条件通过，看起来「验证成功」，实际上是空转。
+\end{enumerate}
+
+本报告的全部实验设计都围绕这两个陷阱展开：用\textbf{外部权威实现}（Pinocchio）破除自证，
+用\textbf{故意失配自检}证明对拍有鉴别力，用\textbf{故意注入的扰动}（模型失配、摩擦、噪声、控制周期）
+把模型误差敏感度从标称用例中剥离出来，并逐项检查每个指标的来源。
+
+\subsection{验证对象：四个运动控制算法}
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.0cm} p{3.0cm} p{3.0cm} p{3.0cm} p{3.3cm}@{}}
+\toprule
+算法 & 书 \texttt{\textbackslash label} & 章节 & 类型 & 书中控制律 \\
+\midrule
+JS 重力补偿 PD & \texttt{algo:robctrl\_js\_pd} & \texttt{chap4\_3} & 关节空间调节 &
+  $u=K_P(q_d-q)-K_D\dot q+g(q)$ \\
+JS 逆动力学 PD & \texttt{algo:robctrl\_js\_invdyn} & \texttt{chap4\_3} & 关节空间跟踪 &
+  $y=K_P\tilde q+K_D\dot{\tilde q}+\ddot q_d$，$u=By+C\dot q+F_f\dot q+g$ \\
+OS 重力补偿 PD & \texttt{algo:robctrl\_os\_pd} & \texttt{chap4\_4} & 操作空间调节 &
+  $u=J_a^{T}\!\left(K_P(x_d-x_e)-K_DJ_a\dot q\right)+g$ \\
+OS 逆动力学 PD & \texttt{algo:robctrl\_os\_invdyn} & \texttt{chap4\_4} & 操作空间跟踪 &
+  $y=J_a^{-1}(\ddot x_d+K_D\dot{\tilde x}+K_P\tilde x-\dot J_a\dot q)$，$u=By+C\dot q+g$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{不在本批次范围}：JS/OS 阻抗控制、零力控制、导纳控制、力/位姿混合控制（需要外力注入与接触模型），
+以及 \texttt{chap4\_2} 的独立关节 PID/ADRC。这些算法的验证属后续批次，本报告在第~\ref{sec:handover}~节
+给出所需的接口缺口清单。
+
+\subsection{本文要回答的问题}
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}c p{11.6cm} p{2.6cm}@{}}
+\toprule
+编号 & 研究问题 & 由哪个实验回答 \\
+\midrule
+\textbf{RQ1} & 书中模型（运动学/雅可比/动力学）的代码实现\textbf{本身}对不对？ &
+  实验一（内部自检）+ 实验二（外部对拍） \\
+\textbf{RQ2} & 4 个控制律的实现是否\textbf{精确}复现书中的解析预测
+  （如逆动力学控制下 $\ddot{\tilde q}+K_D\dot{\tilde q}+K_P\tilde q=0$）？ &
+  实验三（2R 贯通）+ 实验四（6R 正式验证） \\
+\textbf{RQ3} & 每个算法\textbf{在什么条件下失效}？对模型误差、摩擦、噪声、控制周期有多敏感？ &
+  实验五（鲁棒性与边界） \\
+\textbf{RQ4} & 结论是否可复现、可追溯？哪些结论\textbf{不能}下？ &
+  全程（第~\ref{sec:method}~节、附录 A/B/C）+ 第~\ref{sec:discuss}~节 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+其中 \textbf{RQ1 与 RQ2 的分工是本报告设计上的关键}：实验三/四的标称用例中 plant 与控制器\textbf{同源}，
+只能证明「实现与书中公式自洽」；\textbf{「书的模型本身是否错」由实验二承担，模型误差敏感度由实验五承担}。
+这条分工在第~\ref{sec:exp3}--\ref{sec:exp5}~节中逐段标注。
+
+\subsection{三条验证设计红线}\label{sec:redlines}
+
+\begin{warnbox}{红线 1（非同源）}
+绝不能用「书自己的模型」同时当被控对象与控制器模型。同源时误差被系统性抵消，验证退化为自证。
+实验二（外部权威对拍）与实验五（失配/摩擦/噪声只作用于 plant）就是为此设置的破局手段。
+\end{warnbox}
+
+\begin{warnbox}{红线 2（参照必须真来自参照物）}
+凡对拍必须校验参照物的来源。本项目曾因此抓出一处\textbf{假通过}：副本同步测试用
+\path{sys.path.insert + import} 取「原件」，但 \texttt{model/\_\_init\_\_.py} 已把裸名注册进
+\texttt{sys.modules}（指向副本），于是「原件」实为副本本身，数值对拍退化为自证。
+现改为 \texttt{importlib} 隔离加载 + \texttt{\_\_file\_\_} 守卫。
+\end{warnbox}
+
+\begin{warnbox}{红线 3（指标必须承载信息）}
+凡用于判定的「参照量/指标」都要检查它是否真的承载信息。同类陷阱在实验四中再次出现：
+OS 用例的参考量 \texttt{ref} 只含 $x_d$，\textbf{不含} $q_d$，故仿真记录里的「关节误差 $\tilde q$」
+\textbf{恒为 0}；若直接用它判「20 组全部收敛」，判据会\textbf{无条件通过}。现已在评测层改用实验者
+选定的目标位形 $q_d$（$x_d=\mathrm{fk}(q_d)$，\textbf{不是逆解结果}）重算 $\tilde q$。
+\end{warnbox}
+
+\subsection{实验总览与证据链}
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.6cm} c c c c p{2.6cm} p{2.2cm}@{}}
+\toprule
+实验 & 阶段 & 用例 & 判据数 & 通过 & 耗时 & 归档 \\
+\midrule
+实验一 模型层自检 & 0 & 2R + 6R & 7 & \textbf{7/7} & 70.6 s & \texttt{res/model\_stage0/} \\
+实验二 权威对拍 & 1 & 2R + 6R & 5 + 自检 & \textbf{全 PASS} & 2--4 min & \texttt{res/model\_stage1/} \\
+实验三 2R 端到端贯通 & 2 & 平面 2R & 4 & \textbf{4/4} & 607.8 s & \texttt{res/2r\_stage2/} \\
+实验四 6R 正式验证 & 3 & 6R Puma 型 & 6 & \textbf{6/6} & 2504.6 s & \texttt{res/6r\_stage3/} \\
+实验五 鲁棒性与边界 & 4 & 6R & 3（6 实验块） & \textbf{3/3} & 3877.1 s & \texttt{res/6r\_stage4/} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{证据链的逻辑顺序}（第~\ref{sec:redlines}~节红线的落地）：
+
+\begin{center}
+\small
+\begin{tabular}{@{}l@{}}
+实验一\ \ 尺子准吗？（书内部自洽）\hfill$\Bigg\}$\ $\Rightarrow$ 模型可信 $\Rightarrow$ 实验三/四的闭环结论才有意义 \\
+实验二\ \ 尺子与权威尺子一致吗？（外部）\hfill$\Bigg\}$\ $\Rightarrow$ 排除「书模型自身错」 \\
+实验三\ \ 最小用例上四个算法能不能跑通？（链路 + 相图） \\
+实验四\ \ 完整 6R 上四个算法的四类证据齐不齐？（收敛 / 误差动态精确性 / 正性能 / 边界） \\
+实验五\ \ 何时失效、对扰动多敏感？（失配 / 摩擦 / 噪声 / 周期 / 奇异 / 离散化） \\
+\end{tabular}
+\end{center}
+
+\subsection{主要结论一览}
+
+\begin{keybox}{一句话结论}
+4 个算法的\textbf{控制律实现与书中公式一致}，并被独立数值证据支持——模型层与 Pinocchio 对拍达机器精度
+（$B/g/J_w/\mathrm{FK}\sim10^{-15}$、$C\dot q\sim10^{-9}$，后者差异来自书中 $C$ 的有限差分近似而非模型错误）；
+控制层在完整 6R 上 \textbf{6 条判据全部通过}，其中最强的一条（逆动力学闭环误差动态与设定
+$(\xi,\omega_n)$ 的相对误差）最差 \textbf{1.2764\%}（阈值 2\%）；JS/OS 分工（\textbf{130$\times$/136$\times$}）
+与关节耦合抑制（\textbf{63$\times$}）给出了书中定性论断的定量证据。
+\textbf{但「已验证」有明确边界}：OS 逆动力学在 $\sigma_{\min}(J_a)\le1\times10^{-4}$ 上因 $J_a^{-1}$
+放大而\textbf{必然失效}（反馈力矩 282.6 N$\cdot$m 超 200 限），OS 重力补偿 PD 在
+$\sigma_{\min}\le5\times10^{-2}$ 上\textbf{推不动退化方向}；这两点对应书中\textbf{已声明}的
+「$J_a$ 列满秩」前提，\textbf{不是书的错误}；另外摩擦未补偿的 log-log 斜率只测到 $0.05$--$0.2$
+（\textbf{负结果}，机理已定位，见第~\ref{sec:friction}~节与第~\ref{sec:negative}~节）。
+\end{keybox}
+
+各算法判定与关键证据（详细依据见第~\ref{sec:peralgo}~节与第~\ref{sec:verdict}~节）：
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.6cm} p{2.6cm} p{10.3cm}@{}}
+\toprule
+算法 & 判定 & 最硬证据 \\
+\midrule
+JS 重力补偿 PD & 已验证 & 无源性正功占比 $8.15\times10^{-10}$；20/20 收敛；分工 $130.0\times$；耦合抑制 $63.1\times$ \\
+JS 逆动力学 PD & 已验证 & 误差动态最差 \textbf{1.2764\%}（阈值 2\%）；20/20 收敛；分工 $130.0\times$ \\
+OS 重力补偿 PD & 已验证（\textbf{前提内}） & 双向自洽 $3.59\times10^{-16}$；分工 $136.3\times$；失效点 $\sigma_{\min}=5.0\times10^{-2}$（推不动） \\
+OS 逆动力学 PD & 已验证（\textbf{前提内}） & 误差动态最差 \textbf{0.5563\%}；映射 $3.32\times10^{-15}$；失效点 $\sigma_{\min}=1.0\times10^{-4}$（力矩爆） \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{报告结构}
+
+第~\ref{sec:method}~节给出统一的实验方法、平台与可复现性口径；第~\ref{sec:exp1}--\ref{sec:exp5}~节
+依次报告五个实验；第~\ref{sec:discuss}~节集中讨论负结果、未做项、执行期口径修订与局限；
+第~\ref{sec:conclusion}~节给出结论与对后续批次的交接；附录~\ref{app:commands}~为可直接执行的复现命令，
+附录~\ref{app:archive}~为归档字段索引（每个数字 $\leftrightarrow$ 归档字段的对应），
+附录~\ref{app:env}~为环境版本。
+
+%=======================================================================
+\section{实验方法、平台与可复现性}\label{sec:method}
+%=======================================================================
+
+\subsection{被控对象：两个用例与统一动力学接口}
+
+\textbf{用例}：平面 2R 臂（实验三，最小用例）与 6R Puma 型机械臂（实验四、五，完整用例）。
+DH 与连杆参数\textbf{只有一处定义}（\texttt{code/code\_models.py}），仿真层、控制器、度量一律从该处取，
+避免口径漂移。2R 的「控制用任务空间」取 \textbf{2 维位置子任务 $[x,y]$}（理由见第~\ref{sec:revisions}~节第 7 条）。
+
+被控对象采用书中同一形式的刚体动力学方程，摩擦与外力以显式注入项实现：
+\begin{equation}
+\tau = B(q)\ddot q + C(q,\dot q)\dot q + F_f\dot q + g(q) - \tau_e .
+\end{equation}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{模型库} \texttt{model/}：FK、几何/分析雅可比、$\dot J_a$、$B,C,g$。
+  其中 \texttt{model/} 是 Part II 代码的\textbf{副本}（仓库「不复制副本」约定的唯一豁免点，
+  为让 Part IV 验证自包含），用 \texttt{PROVENANCE} 哈希 + 数值双重对拍防漂移（见第~\ref{sec:c1sync}~节）。
+\item \textbf{仿真层} \texttt{code/code\_sim.py}：定步长 RK4、控制零阶保持
+  （$h_c=k\,h_{\mathrm{sim}}$）、外力/摩擦/测量噪声注入钩子、全量记录
+  （含 $\sigma_{\min}(J_a)$、$\sigma_{\max}(J_a)$、$\mathrm{cond}(B)$、$u-g$、NaN 标记）。
+\item \textbf{摩擦}：书中方程含 $F_f\dot q$，但 \texttt{model/code\_dynamics.py} \textbf{不含该项}，
+  故由仿真层显式加入；基线取 $F_f=0$，仅在实验五启用（$\tau_f=-F_c\tanh(\dot q/\varepsilon)$）。
+\end{itemize}
+
+\subsection{控制器与增益参数化}
+
+四个控制器对外接口统一为 \texttt{u = ctrl(state, ref, gains, case, F\_f=None)}，与书中算法框逐行对应。
+\textbf{书中未给定 $K_P,K_D$ 的具体取值}，本报告一律按 $(\omega_n,\xi)$ 参数化记录
+（$\xi=1.0$ 用于全部用例），而参考惯量 $\Lambda$ 的取法\textbf{因算法而异}——这是执行中确认的关键口径：
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.5cm} c c p{8.0cm}@{}}
+\toprule
+算法 & 实验三（2R） & 实验四/五（6R） & $\Lambda$ 标定 \\
+\midrule
+\texttt{js\_pd} & $\omega_n=8$ & $\omega_n=8$ & $B(q_d)$（\textbf{6R 必需}） \\
+\texttt{js\_invdyn} & $\omega_n=8$ & $\omega_n=8$ & $I$（书中原式 $K_P=\omega_n^2I$） \\
+\texttt{os\_pd} & $\omega_n=12$ & $\omega_n=12$ & $(J_aB^{-1}J_a^{T})^{-1}$（任务惯量） \\
+\texttt{os\_invdyn} & $\omega_n=6$ & $\omega_n=6$ & $I$（书中原式） \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+两点口径需要解释，因为它们直接影响「验证失败」的归因：
+
+\begin{itemize}[leftmargin=1.6em,itemsep=3pt]
+\item \textbf{为什么重力补偿类必须按参考惯量标定}：6R 的 $\operatorname{cond}(B)\approx1.7\times10^{3}$、
+  $\lambda_{\min}(B)\approx1.15\times10^{-3}$；若用 $\Lambda=I$，最小惯量方向的阻尼速率达
+  $\sim1.4\times10^{4}$/s，\textbf{远超 $dt=1$ ms 的 RK4 稳定域}，表现为\textbf{离散化失稳}
+  （实测 50 ms 内 $\|u\|$ 冲到 $10^{92}$），而不是控制律错误。2R 的 $\operatorname{cond}(B)\approx13$，
+  不受影响。
+\item \textbf{为什么逆动力学类反而要用书中原式}：逆动力学把 $B$ 精确抵消，误差动态才是
+  「单位质量、逐分量解耦」的二阶系统——只有这样才能把辨识出的 $(\hat\xi,\hat\omega_n)$
+  直接与设定值比对。若也按 $\Lambda$ 标定，$(\hat\xi,\hat\omega_n)$ 就失去严格基准。
+\end{itemize}
+
+\begin{keybox}{注意：带宽 $\omega_n$ 在四个算法里含义不同}
+只有两个逆动力学算法的误差动态才是「单位质量」二阶系统；两个重力补偿 PD 的实际带宽被 $B$（JS）与
+任务惯量 $\Lambda$（OS）缩放，OS PD 约只有 $0.22\,\omega_n$，故其任务空间增益要明显更大。
+\end{keybox}
+
+\subsection{判据体系与阈值（总表）}
+
+判据定义与阈值见验证计划第 5 节；下表只列\textbf{本报告实际使用的那一版}（含执行中的口径修订，
+修订理由见第~\ref{sec:revisions}~节）。阈值在整个执行过程中\textbf{一字未动}。
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{判据体系、阈值与实测结果总表}\label{tab:criteria}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{0.8cm} p{2.9cm} p{3.6cm} p{3.4cm} p{4.0cm} p{1.2cm}@{}}
+\toprule
+实验 & 判据 & 验证什么 & 阈值 & 实测 & 结论 \\
+\midrule
+\textbf{一} & 1 副本同步对拍 & 验证代码所用模型与 Part II 原件同版 & 哈希一致；数值 $\max|\Delta|\le10^{-12}$ & 哈希 4/4；$\max|\Delta|=0$ & 通过 \\
+一 & 2 $\dot J_a$ 矩阵一致性 & $\dot J_a$ 实现正确且差分收敛 & 相对误差 $<10^{-6}$，随 $h$ 按 $O(h^2)$ & 2R \textbf{2.73e-11}、6R \textbf{2.42e-11}；斜率 \textbf{2.000/2.000} & 通过 \\
+一 & 3 $\dot J_a$ 乘积法则 & $\frac{d}{dt}[J_a\dot q]$ 的两项分解无漏项 & 相对误差 $<10^{-6}$；漏项版应被检出 & 2R \textbf{2.44e-10}、6R \textbf{2.34e-10}；漏项版 9.16e-1/6.09e-1 & 通过 \\
+一 & 4 重力项与 $\partial U/\partial q$ 一致 & 重力符号约定与势能梯度一致 & $<10^{-10}$ & 2R \textbf{1.45e-16}、6R \textbf{5.84e-17} & 通过 \\
+一 & 5a--5d 静平衡（原文已修订） & 平衡条件、稳定性与失稳增长率 & 见第~\ref{sec:gravity}~节 & 5a 1.54e-14/3.26e-14；5b 无漂移；5c 可检出；5d 偏差 0.21\%/0.14\% & 通过 \\
+一 & 6 $C$ 的反对称性 & Christoffel 版式无结构性错误 & 参照版式反对称 $<10^{-12}$ & $\dot B-2C$ 偏差 \textbf{3.28e-16/1.70e-16} & 通过 \\
+一 & 7 积分器收敛阶（新增） & 仿真积分器确实是四阶 & 经验阶 $\in[3.5,4.5]$ & \textbf{3.9926} & 通过 \\
+\textbf{二} & FK/$B$/$g$/$C\dot q$/$J_w$ 逐项对拍 & 书的模型与权威实现一致 & 位置 $<10^{-10}$；相对误差 $<10^{-8}$ & 6R：5.6e-16/1.0e-15/8.0e-16/1.7e-9/3.5e-16 & 通过 \\
+二 & 故意失配 $+5\%$ 质量自检 & 对拍\textbf{有鉴别力}（不是测试太松） & 必须检出 & 2R 8.68e-17 $\to$ \textbf{4.71e-2}；6R 3.10e-16 $\to$ \textbf{4.42e-2} & 通过 \\
+\textbf{三} & 1 四个算法在 2R 上跑通 & 链路、接口、符号正确 & 无 NaN/Inf、无异常 & 20 组 $\times$ 4 算法：\texttt{n\_nan}=0、\texttt{n\_error}=0 & 通过 \\
+三 & 2 收敛性 & 调节控制确实收敛 & 20 组全部 $\|\tilde q\|_\infty<10^{-3}$ rad & 最差 \textbf{9.44e-06}（\texttt{js\_pd}） & 通过 \\
+三 & 3 力矩量级合理 & 控制量不饱和 & $\|u\|_\infty\le200$ N$\cdot$m & 最差 \textbf{79.83}（\texttt{os\_pd}） & 通过 \\
+三 & 4a 标称稳态误差 & 同源无扰时稳态误差恒为 0 & 全部 $<10^{-9}$ & 三档 $K_P$ 全部 \textbf{0.0} & 通过 \\
+三 & 4b 未补偿扰动下 $\propto K_P^{-1}$ & 增益标度律成立 & 单调下降；斜率 $\in[-1.30,-0.70]$ & \textbf{$-0.9996/-0.9551/-0.9986/-0.9954$} & 通过 \\
+\textbf{四} & 1 误差动态 $(\hat\xi,\hat\omega_n)$ & 逆动力学把误差动态精确线性化为设定二阶系统 & 相对误差 $<2\%$（$dt{=}1$ ms、$T{=}3.0$ s） & \texttt{js\_invdyn} 最差 \textbf{1.2764\%}、\texttt{os\_invdyn} 最差 \textbf{0.5563\%} & 通过 \\
+四 & 2 重力补偿 PD 无源性 & Lyapunov 导数非正（书中论断） & 正功占比 $<10^{-6}$ 且逐点 $V\le V(0)(1{+}10^{-6})$ & \textbf{8.15e-10}；逐点成立 & 通过 \\
+四 & 3a 收敛（前提 $\operatorname{cond}(J_a)\le100$） & 前提成立时必收敛 & 全部 $\|\tilde q\|_\infty<10^{-3}$ rad & 20/20 $\times$4（\texttt{os\_pd} 18/18）；最差 \textbf{1.068e-06} & 通过 \\
+四 & 3b 前提被违反的初值 & 如实单列为边界样本 & 不作为通过条件 & \texttt{os\_pd} 2 组（\texttt{ic05}/\texttt{ic10}） & 如实记录 \\
+四 & 4 JS/OS 分工 & 快速跟踪下逆动力学显著优于重力补偿 PD & 最快轨迹下 $err_{PD}/err_{invdyn}\ge10\times$ & \textbf{130.0$\times$}（JS）/ \textbf{136.3$\times$}（OS） & 通过 \\
+四 & 5 耦合抑制（6R） & 逆动力学抑制关节间非指令运动 & 逆动力学 $<10^{-3}$ rad 且比值 $\ge10$ & PD 2.016e-02 vs 逆动力学 3.195e-04 $\to$ \textbf{63.1$\times$} & 通过 \\
+四 & 6 OS 双向自洽 & $\tau\leftrightarrow F$ 的转置雅可比与任务惯量映射实现正确 & 相对误差 $<10^{-12}$ & \textbf{3.59e-16/3.32e-15} & 通过 \\
+\textbf{五} & 1 误差随扰动量的量级关系 & 失配/摩擦/噪声/周期四项趋势与书中论断一致 & 四项子实验趋势成立 & 四项全 PASS & 通过 \\
+五 & 2 奇异边界给出明确失效点 & 书中「$J_a$ 列满秩」前提的定量边界 & 两个 OS 算法都给出「首个失效 $\sigma_{\min}$」+ 对照 & \texttt{os\_pd} \textbf{5.0e-2}、\texttt{os\_invdyn} \textbf{1.0e-4}；JS 对照 0/6 & 通过 \\
+五 & 3 离散化失稳 vs 连续律正确性 & 失稳是积分器/采样属性，不是控制律属性 & $\ge2$ 个算法给出阈值且两档 $h\omega^*$ 相对差 $<50\%$ & \textbf{20.9\% $<$ 50\%}；四算法阈值完全相同 & 通过 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{判据口径的三处修订都在执行中按实测冻结，阈值一字未动}，且全部如实记录在第~\ref{sec:revisions}~节：
+\stage{1} 实验一判据 5 拆 5a--5d（原文在标称位形上恒为假）；
+\stage{2} 实验四判据 1 改在 $dt=1$ ms 上判定、判据 3 拆 3a/3b；
+\stage{3} 实验五判据 2 的三处口径与摩擦守卫的归一窗口。
+
+\subsection{实验平台与软硬件环境}
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.0cm} p{12.5cm}@{}}
+\toprule
+项 & 值 \\
+\midrule
+解释器 & \texttt{E:\textbackslash Anaconda3\textbackslash envs\textbackslash py311-gym\textbackslash python.exe}（conda env \texttt{py311-gym}） \\
+Python & \textbf{3.11.9} \\
+numpy / scipy / matplotlib & \textbf{2.1.0 / 1.17.0 / 3.10.6} \\
+平台 & Windows-10-10.0.19045-SP0 \\
+Pinocchio（仅实验二） & \textbf{4.1.0}，装在\textbf{独立}工作区 env \texttt{D:\textbackslash Projects\textbackslash 2024\_MN4R\textbackslash .envs\textbackslash py311-pin}（Python 3.11.16 / numpy 2.4.6） \\
+第三方仿真引擎 & \textbf{无}（只用 numpy/scipy/matplotlib；不引入 MuJoCo/PyBullet） \\
+CPU & 8 核（实测可用算力约 \textbf{2--2.5 核}，故 \texttt{--workers 6} 已饱和，并行收益 $\sim$1.8$\times$） \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{keybox}{为什么 Pinocchio 单独装一个 env}
+\texttt{pip install pin} 在 Windows 上\textbf{无轮子}（官方 README 写明 pip 仅 Linux），只能用 conda-forge；
+而 \texttt{py311-gym} 的依赖是\textbf{已对齐}的（CartPole 与其他验证共用），装进去会牵动
+numpy/scipy/boost 的版本，破坏既有验证的可复现性。运行 \texttt{py311-pin} 时必须先把其
+\texttt{Library\textbackslash bin} 加入 \texttt{PATH}（且早于 \texttt{import numpy}），否则 numpy 的 MKL
+延迟加载失败（连 \texttt{A @ A} 都崩，退出码 \texttt{0xc06d007f}）。
+\end{keybox}
+
+\subsection{统计与可复现性口径}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{随机性}：全部实验固定种子（实验一/三/四/五的初值扰动 $seed=0$；无噪声实验的噪声 $seed$
+  记录在归档内）。
+\item \textbf{统计口径}：每个「收敛性/精度」类判据用 \textbf{20 组初值}，报告\textbf{均值 $\pm$ 标准差}
+  而不是单条曲线。
+\item \textbf{可追溯性}：报告里每个数字都能在 \texttt{res/<用例>\_stage<N>/result.json} 找到来源，
+  并能用归档记录的种子/增益复跑（命令见第~\ref{sec:repro}~节与附录~\ref{app:commands}，
+  字段对应见附录~\ref{app:archive}）。
+\item \textbf{归档契约}：「先写 \texttt{result.json}、再出图」是硬规矩——出图整体包在 \texttt{try} 里，
+  失败只记 \texttt{figure\_error}，绝不影响归档（该规矩来自一次 63.7 min 完整跑在出图处崩溃、
+  归档没写出来的教训）。
+\end{itemize}
+
+\subsection{复现入口}\label{sec:repro}
+
+{\footnotesize
+\begin{verbatim}
+$env:PYTHONUTF8='1'
+$PY = 'E:\Anaconda3\envs\py311-gym\python.exe'
+$RC = 'D:\Projects\2024_MN4R\4-MT4R-github\Robot-Control'
+
+& $PY "$RC\test\model\run_stage0.py"                    # 实验一：7 条判据，约 71 s
+& 'D:\Projects\2024_MN4R\.envs\py311-pin\python.exe' `
+      "$RC\test\model\test_model_pinocchio.py"          # 实验二：2-4 min
+& $PY "$RC\test\ctrl_common\run_stage2.py" --workers 6  # 实验三：约 10.1 min
+& $PY "$RC\test\ctrl_common\run_stage3.py" --workers 6  # 实验四：约 41.7 min
+& $PY "$RC\test\ctrl_common\run_stage4.py" --workers 6  # 实验五：约 64.6 min
+\end{verbatim}
+}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \texttt{--quick} 冒烟模式\textbf{只验链路}，判据结论无意义，且\textbf{会覆盖同名归档}——
+  跑完冒烟必须重跑完整版。
+\item 长任务务必\textbf{后台跑}；改出图代码后\textbf{不要重跑仿真}：依次跑
+  \texttt{scripts/smoke\_stage4\_figures.py}（审字符）$\to$ \texttt{run\_stage4.py --figs-only}
+  （秒级重建图集，只读归档）。
+\item 完整命令清单（含单项入口与辅助工具）见\textbf{附录~\ref{app:commands}}。
+\end{itemize}
+
+\subsection{归档清单}
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.0cm} p{9.0cm} p{3.4cm}@{}}
+\toprule
+归档 & 内容 & 对应小节 \\
+\midrule
+\texttt{../model\_stage0/result.json} + \texttt{run.log} & 实验一，\texttt{criteria[7]}、\texttt{criterion\_revisions[3]}、\texttt{notes[6]} & 第~\ref{sec:exp1}、\ref{sec:revisions}~节 \\
+\texttt{../model\_stage1/result.json} + \texttt{run.log} & 实验二，\texttt{pinocchio}、\texttt{cases\{2r,6r\}}、\texttt{mismatch} & 第~\ref{sec:exp2}~节 \\
+\texttt{../2r\_stage2/result.json} + \texttt{run.log} + \texttt{figs/}$\times$4 & 实验三，\texttt{criteria[4]}、\path{algorithms[4].table}、\texttt{traces} & 第~\ref{sec:exp3}~节 \\
+\texttt{../6r\_stage3/result.json} + \texttt{run.log} + \texttt{summary.md} + \texttt{figs/}$\times$7 & 实验四，\texttt{criteria[6]}、\texttt{algorithms[4]}、跨算法专项 8 块、\texttt{step\_size\_check}、\texttt{fit\_dt\_probe} & 第~\ref{sec:exp4}~节 \\
+\texttt{../6r\_stage3/probe\_fit\_dt*.json} & 判据 1 的\textbf{步长定点探针}（$dt=2/1/0.5$ ms 逐分量 $\hat\xi$） & 第~\ref{sec:dtprobe}~节 \\
+\texttt{../6r\_stage4/result.json} + \texttt{run.log} + \texttt{figs/}$\times$9 & 实验五，\texttt{criteria[3]}、6 个实验块、\texttt{compute\_cost}、\texttt{scope\_notes} & 第~\ref{sec:exp5}~节 \\
+\texttt{../*/pre\_rk4fix\_*} & \textbf{作废留档}（积分器 bug 修正前的旧数字） & 第~\ref{sec:integrator}、\ref{sec:revisions}~节 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+%=======================================================================
+\section{实验一：模型层的内部自检（阶段 0）}\label{sec:exp1}
+%=======================================================================
+
+\subsection{实验目标与实验设计}
+
+\textbf{验证什么.} 在碰任何控制器之前，先证明「尺子准」：把雅可比的时间导数 $\dot J_a$、
+动力学各项 $B,C,g$ 与全部符号约定，用\textbf{独立于被测实现的数值手段}逐项检验一遍。
+这里回答的是 RQ1 的\textbf{内部自洽}部分——若公式与实现「一起错」，本实验会整体通过，
+故它必须与实验二（外部对拍）配对使用。
+
+\textbf{如何验证.} 7 条判据，全部采用「\textbf{真值来自另一条独立路线}」的结构：
+2R 走闭式手推（机器精度真值），6R 走沿轨迹的时间差分 + Richardson 外推（$O(\tau^4)$）；
+$C$ 的参照物是自建 \texttt{B\_ref} + \textbf{复步微分}（$h=10^{-20}$，取虚部）构造的 Christoffel 符号。
+每条判据都配\textbf{灵敏度自检}（故意写入典型 bug 看能否检出），以证明测试本身有鉴别力。
+
+\textbf{结果.} \textbf{判据 7/7 PASS，耗时 70.6 s}，归档 \texttt{res/model\_stage0/result.json}。
+
+\subsection{判据 1：模型副本同步（验证「用的是哪份模型」）}\label{sec:c1sync}
+
+\textbf{验证什么.} \texttt{model/} 是 Part II 代码的\textbf{副本}，代价是两份可能漂移。
+若副本过期，后续一切验证都在验证一份与书中不同的模型，结论无效。
+
+\textbf{如何验证.} \texttt{test/model/test\_model\_sync.py} 做\textbf{哈希 + 数值}双重对拍：
+\stage{1} 4 个副本文件的 \texttt{PROVENANCE} 哈希 vs 原件当前哈希；
+\stage{2} 7 项数值量（\texttt{robot\_fk}、\texttt{robot\_jacobian\_a}、\texttt{robot\_B}、
+\texttt{robot\_dyn[B,C,g]}、\texttt{robot\_ik\_lm}）在随机 $(q,\dot q)$ 上逐项比较。
+\textbf{任何阶段开始前都先跑它。}
+
+\textbf{结果.} 哈希 \textbf{4/4 一致}；7 项数值量 $\max|\Delta|=\mathbf{0.000e+00}$。判据通过。
+
+\begin{warnbox}{本判据曾有一处「假通过」（红线 2 的来源）}
+原实现用 \texttt{sys.path.insert + import code\_dynamics} 取原件，但 \texttt{model/\_\_init\_\_.py}
+已把裸名注册进 \texttt{sys.modules}（指向\textbf{副本}），于是「原件」拿到的其实是副本本身，
+数值对拍退化为\textbf{自证}。现改为 \texttt{importlib} 隔离加载 + \texttt{\_\_file\_\_} 守卫
+（校验参照真的来自 \texttt{Codes/}）。教训具普遍性：\textbf{凡对拍必须校验「参照真的来自参照物」}——
+与第~\ref{sec:exp2}~节的「故意失配」自检同源。
+\end{warnbox}
+
+\subsection{判据 2--3：雅可比时间导数 $\dot J_a$ 与乘积法则}
+
+\textbf{验证什么.} $\dot J_a$ 在 Part II 的代码里\textbf{根本没有实现}，而两个 OS 算法框都写了
+$\dot J_a\leftarrow\texttt{auto\_diff}(J_a,t)$。判据 2 验证 $\dot J_a$ 的\textbf{矩阵一致性}与差分收敛阶；
+判据 3 验证乘积法则 $d[J_a\dot q]/dt=\dot J_a\dot q+J_a\ddot q$ 的\textbf{两项分解无漏项}。
+
+\textbf{如何验证.} 落地为 \texttt{model/code\_jacobian\_dot.py}（\textbf{对 $q$ 逐列中心差分再加权}，
+默认 $h=10^{-6}$）。真值基准走两条\textbf{不同源}的路线：2R 用\textbf{闭式}手推（机器精度）；
+6R 用沿轨迹 $q(t)=q+\dot q\,t$ 的\textbf{时间}中心差分 + Richardson 外推（误差 $O(\tau^4)$）。
+收敛阶只在\textbf{截断主导段}做 log-log 拟合（取 $err>10\times\min(err)$ 的点），
+以免舍入平台把斜率拉平。
+
+\textbf{结果.}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+项 & 判据 & 实测（2R / 6R） & 结论 \\
+\midrule
+矩阵一致性最小相对误差 & $<10^{-6}$ & \textbf{2.73e-11} / \textbf{2.42e-11}（均在 $h=10^{-5}$） & 通过 \\
+收敛阶（截断主导段） & $\approx O(h^2)$ & \textbf{2.000} / \textbf{2.000} & 通过 \\
+乘积法则 & $<10^{-6}$ & \textbf{2.44e-10} / \textbf{2.34e-10}（$\tau=10^{-3}$） & 通过 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+按 $h$ 的完整序列（相对误差，$\|\cdot\|_F$ 口径），如表~\ref{tab:jdot-h} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{$\dot J_a$ 相对误差随差分步长 $h$ 的变化}\label{tab:jdot-h}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+$h$ & $10^{-2}$ & $10^{-3}$ & $10^{-4}$ & $10^{-5}$ & $10^{-6}$ \\
+\midrule
+2R & 1.667e-05 & 1.667e-07 & 1.667e-09 & \textbf{2.731e-11} & 7.142e-11 \\
+6R & 2.484e-05 & 2.484e-07 & 2.483e-09 & \textbf{2.423e-11} & 9.650e-11 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{灵敏度自检}（证明该测试有鉴别力）：故意漏掉 $\dot J_a\dot q$ 项的「常见 bug 版」误差为
+\textbf{9.160e-1}（2R）/ \textbf{6.091e-1}（6R），与完整式相差 $>10^{6}$ 倍
+$\Rightarrow$ 该测试确实能捕获漏项。
+
+\begin{warnbox}{两个易踩的坑}
+\stage{1} $J_a=\operatorname{diag}\{I_3,T_\vartheta(\vartheta(q))^{-1}\}J_w$ 中
+$\vartheta=\vartheta(q)$ 也随 $q$ 变化——差分 $\partial J_a/\partial q_k$ 时\textbf{必须在扰动后的 $q$ 上
+重算欧拉角}，漏了这一步误差会大到量级级别；
+\stage{2} $h$ 小到 $\sim10^{-5}$ 后进入舍入平台（$\sim2\times10^{-11}$），若把平台也算进拟合，
+斜率会被拉到 1.0。
+\end{warnbox}
+
+\subsection{判据 6：科氏项 $C(q,\dot q)$ 的精度与反对称性}
+
+\textbf{验证什么.} \texttt{robot\_dyn} 的 $C$ 用\textbf{中心差分近似} $\partial B/\partial q$ 构造
+Christoffel 符号。需要验证两件事：\stage{1} Christoffel \textbf{版式}本身没有结构性错误
+（否则 $\dot B-2C$ 不反对称）；\stage{2} 差分的\textbf{精度}随 $h$ 如何变化
+（决定「是否值得升级为解析 Christoffel」）。
+
+\textbf{如何验证.} 参照物是\textbf{独立实现}：自建 \texttt{B\_ref} + \textbf{复步微分}
+（$h=10^{-20}$，取虚部）得到的 $\partial B/\partial q$ + \textbf{与 \texttt{robot\_dyn} 完全同版式}的
+Christoffel 构造。「同版式」是关键：这样比较的是 $\partial B/\partial q$ 的\textbf{数值方法}，
+而不是两种不同的 Christoffel 写法。
+
+\textbf{结果.}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+量 & 2R & 6R \\
+\midrule
+参照自检 \texttt{B\_ref} vs \texttt{robot\_B} & 2.31e-16 & 1.10e-16 \\
+$\dot B_{\mathrm{ref}}-2C_{\mathrm{ref}}$ 反对称性偏差 & \textbf{3.28e-16} & \textbf{1.70e-16} \\
+$C$ 相对误差最小值 / 最优 $h$ & 7.51e-11 @ $10^{-5}$ & 7.38e-11 @ $10^{-5}$ \\
+$C$ 收敛阶（$h\ge10^{-4}$ 截断主导段） & \textbf{1.9997} & \textbf{1.9998} \\
+默认 $h=10^{-6}$ 处的残差（相对） & 1.473e-10 & 2.174e-10 \\
+\texttt{robot\_dyn} 默认 $h=10^{-6}$ 的 $C\dot q$ 残差（绝对） & 3.29e-11 & 1.67e-10 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{结论.} Christoffel 版式\textbf{无结构性错误}（参照反对称到机器精度）；差分 $C$ 的误差随 $h$ 按
+$O(h^2)$ 下降，\textbf{默认 $h=10^{-6}$ 并非最优}（最优在 $h\approx10^{-5}$，两者都 $\sim10^{-10}$ 量级）。
+
+\begin{keybox}{「是否把科氏项升级为解析 Christoffel」——已结案：不必升级}
+依据见第~\ref{sec:dtprobe}~节：标称用例下控制器与被控对象同源，$B,C,g$ 在采样点上\textbf{精确抵消}
+（$\ddot q\equiv y$），$C$ 的近似精度\textbf{不进入闭环}；实测的误差动态偏差是\textbf{离散化的 $O(dt)$ 残差}。
+升级要改 Part II 已 $\dag$ 的原件（须授权并重新登记验证状态），\textbf{没必要付这个代价}。
+\end{keybox}
+
+\subsection{判据 4 与 5a--5d：符号约定、重力项与静平衡}\label{sec:gravity}
+
+\textbf{验证什么.} 约定错误会与「模型错误」表现相同，必须先钉住约定；随后验证重力项的符号与量级
+（判据 4），以及平衡条件、平衡稳定性与失稳增长率（判据 5）。
+
+\textbf{如何验证.} 判据 4：$g(q)$ vs \textbf{复步微分}得到的 $\partial U/\partial q$。
+判据 5 原文要求在标称位形上仿真 10 s 检查静平衡——\textbf{实测该判据恒为假}（原因见下），
+故按实测修订为 5a--5d 四条子判据（\textbf{阈值未动}，理由见第~\ref{sec:revisions}~节第 1 条）。
+
+\textbf{约定锁定}（避免与 Pinocchio 对拍时把「约定差异」误判为「模型错误」），如表~\ref{tab:conv} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{符号约定锁定与实测核对}\label{tab:conv}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.6cm} p{6.0cm} p{5.9cm}@{}}
+\toprule
+项 & 书中约定 & 实测 \\
+\midrule
+重力符号 & $g(q)=\partial U/\partial q$，$U=-\sum_n m_n g_0^{T}p_n$ & $g$ vs 复步 $\partial U/\partial q$：\textbf{1.45e-16}（2R）/ \textbf{5.84e-17}（6R） \\
+摩擦项 $F_f$ & $\tau=B\ddot q+C\dot q+F_f\dot q+g$ & \texttt{model/code\_dynamics.py} \textbf{不含 $F_f$}——仿真层显式加入，基线 0，实验五启用 \\
+分析雅可比 & $J_a=\operatorname{diag}\{I_3,T_\vartheta^{-1}\}J_w$ & 相对误差 \textbf{0.0} \\
+速度关系 & 正文偶写 $\dot x_e=J_a\dot q$ & 严格说 $[v;\omega]=J_w\dot q$；实测 $\|J_w\dot q-J_a\dot q\|/\|J_w\dot q\|=\mathbf{0.2761}$（6R 标称位形） \\
+数组下标 & 长度 $N+1$、下标 $1..N$、\texttt{[0]} 不用 & 沿用现有实现 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{静平衡结果（判据 5a--5d）}如表~\ref{tab:static} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{静平衡子判据与实测}\label{tab:static}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}l c c@{}}
+\toprule
+子判据 & 2R & 6R \\
+\midrule
+5a 瞬时平衡残差（标称，$g\ne0$）：$\|\ddot q\|_\infty<10^{-12}$ & \textbf{1.543e-14} & \textbf{3.261e-14} \\
+5b 稳定平衡位形上仿 10 s：$\|\dot q\|_\infty<10^{-10}$ & \textbf{9.43e-31 / 4.40e-32} & \textbf{1.206e-14 / 1.559e-14} \\
+5c 灵敏度对照 $\tau=0/-g/0.99g$ 的 $\|\ddot q_0\|_\infty$ & 7.511 / 15.02 / 0.0751 & 24.37 / 48.74 / 0.2437 \\
+5d 不稳定平衡的实测增长率 / 线性化预测 & 4.0241 / 4.0158（\textbf{0.21\%}） & 6.6863 / 6.6768（\textbf{0.14\%}） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{为什么必须修订}：标称位形 $Q_{\mathrm{NOM}}$ 是\textbf{不稳定}重力平衡
+（$\lambda_{\min}(B^{-1}\partial^2U/\partial q^2)=-16.13$（2R）/ $-44.58$（6R）），
+机器 eps 会按 $e^{\sqrt{|\lambda|}\,t}$ 指数放大（6R 上 10 s 后 $\max\|\dot q\|\sim10^{40}$），
+故「10 s 静平衡」在该位形上\textbf{恒为假}。修订后：5a/5c 在标称位形（$g$ 非零）上做，
+才真正检验符号与量级；5b 把静平衡\textbf{移到 $U$ 的极小点}（稳定平衡位形 \texttt{code\_models.Q\_EQ\_*}，
+并在测试里做了阻尼 Newton 抛光——直接硬编码 10 位有效数字会留下 $\sim4\times10^{-10}$ 的梯度残差）；
+5d 把「发散」转为正向证据。\textbf{结论：判据 5a--5d 全部通过。}
+
+\subsection{判据 7：积分器收敛阶——为一个真 bug 而立的判据}\label{sec:integrator}
+
+\textbf{验证什么.} 仿真层用定步长 RK4 积分，其\textbf{收敛阶}是全部仿真结果的隐含前提：
+若积分器实际只有一阶精度，所有「高精度/小残差」结论都不可信。
+
+\textbf{如何验证.} 对 $\ddot q=-\omega^2q$（$\omega=2$、$T=1$）在
+$h\in\{10^{-2},5\times10^{-3},2.5\times10^{-3},1.25\times10^{-3}\}$ 上积分，拟合全局经验阶。
+
+\textbf{结果.} 误差序列 4.581e-09 $\to$ 2.883e-10 $\to$ 1.808e-11 $\to$ 1.130e-12；
+\textbf{全局经验收敛阶 3.9926}（阈值 $[3.5,4.5]$），判据通过。
+
+\begin{warnbox}{这条判据是为一个真 bug 立的}
+\texttt{code\_sim.rk4\_step} 的 $q$ 更新权重原写成 $(a_1+2a_2+a_3)/6$（\textbf{多算 $a_2$}，
+正确是 $(a_1+a_2+a_3)/6$），使「RK4」\textbf{全局只有一阶精度}（经验阶 1.000；
+同一算例在 $h=10^{-2}$ 上误差 6.198e-03 vs 4.581e-09，\textbf{差 1.35e6 倍}），
+并把稳定域从 $h\omega^*=2.785$ 压到 $\approx1.0$。
+\textbf{影响面与处置见第~\ref{sec:revisions}~节第 10 条——实验三/四/五的旧数字曾全部作废并整体重跑。}
+该 bug 此前 10 轮没被抓到，是因为实验三/四的判据都是「稳态误差/收敛/定性趋势/数值恒等式」，
+\textbf{一个欠精度积分器照样全过}。由此确立的经验规则：
+\textbf{理论值与实测差 3 倍以上时必须当 bug 查，不许留作「可能的口径问题」。}
+\end{warnbox}
+
+\subsection{实验一小结}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+判据 & 1 副本同步 & 2 $\dot J_a$ & 3 乘积法则 & 4 重力项 & 5a--5d 静平衡 & 6 $C$ 反对称 & 7 积分器阶 \\
+\midrule
+结论 & 通过 & 通过 & 通过 & 通过 & 通过 & 通过 & 通过 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{实验一说明的是}：书中动力学各分量与雅可比导数的\textbf{实现}在数值上自洽、收敛阶正确、
+符号约定明确，作为后续闭环实验的「尺子」是可信的。
+\textbf{但不能说明}：模型与外部权威实现一致（$\to$ 实验二），也不能说明控制律正确（$\to$ 实验三/四）。
+
+%=======================================================================
+\section{实验二：与权威实现的交叉验证（阶段 1）}\label{sec:exp2}
+%=======================================================================
+
+\subsection{验证什么}
+
+排除「\textbf{书自己的模型本身错了}」这一假阳性来源（RQ1 的外部部分）。
+实验一只检验书内部的\textbf{自洽性}——如果公式与实现一起错，实验一会整体通过。
+
+\subsection{如何验证}
+
+\textbf{做法.} 用 Pinocchio \textbf{4.1.0}，以\textbf{完全相同的 DH 与连杆参数}建同一台机器人，
+逐项对拍：正运动学位姿、质量矩阵 $B$、重力项 $g$、$C\dot q$ 乘积、几何雅可比 $J_w$。
+
+\textbf{装配不猜下标.} 把各关节的常量变换 $\Sigma_i$ 与末端固定变换 $M_f$ 当\textbf{未知量}，
+在 24 个随机位形上用最小二乘解出（多起点、\texttt{exp3} 参数化），以\textbf{残差达机器精度}作为
+「书链确实能被 pin 的串联链精确表示」的证据。这样做是为了避免把「装配写法差异」误判为「模型错误」——
+这正是本项目早期一次误判的根源：
+
+\begin{warnbox}{两条曾经记反/误判的结论（已更正）}
+\stage{1} pinocchio 的关节复合语义是 $oM_i=\Sigma_1R_z(q_1)\cdots\Sigma_iR_z(q_i)$
+（$R_z$ 施加在 $\Sigma$ \textbf{之后}），与书链 $T_i=T_{i-1}A_i(q_i)$ 的复合方向\textbf{相反}
+（对照错的写法实测偏差 6.4e-01）；
+\stage{2} \textbf{不存在「书 D-H 错位一格」}——书关节 $i$ 恰好对应 pin 关节 $i$，
+当时是把「D-H 连杆系原点（远端）」与「关节原点（近端）」混用了。
+另：$\Sigma_i=A_i(0)$（最「显然」的取法）\textbf{不等价于}书链——旋转相同、平移差一次 $R_z(q_i)$ 的旋转。
+\end{warnbox}
+
+\textbf{「故意失配」灵敏度自检}（本阶段的\textbf{自检}，不能省）：给自建模型的\textbf{质量整体 $+5\%$}，
+确认对拍能\textbf{检出}。这一步回答「通过是因为模型对，还是因为测试太松」。
+
+\subsection{结果}
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.6cm} c c c p{2.6cm}@{}}
+\toprule
+对拍对象 & 判据 & 2R 实测 & 6R 实测 & 结论 \\
+\midrule
+正运动学 $x_e$（位姿矩阵 $\max\|\Delta\|$） & $<10^{-10}$ & \textbf{2.22e-16} & \textbf{5.55e-16} & 通过 \\
+质量矩阵 $B(q)$（相对误差） & $<10^{-8}$ & \textbf{3.56e-16} & \textbf{1.04e-15} & 通过（对称性偏差 0.0） \\
+重力项 $g(q)$（相对误差） & $<10^{-8}$ & \textbf{4.07e-16} & \textbf{8.01e-16} & 通过 \\
+$C\dot q$（相对误差，只比乘积） & $<10^{-8}$ & \textbf{3.40e-09} & \textbf{1.67e-09} & 通过 \\
+几何雅可比 $J_w$（世界系，相对误差） & $<10^{-8}$ & \textbf{1.31e-16} & \textbf{3.52e-16} & 通过 \\
+装配拟合残差（机器精度即通过） & --- & 2.22e-16 & 5.55e-16 & 通过 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{灵敏度自检结果}：2R 标称误差 8.68e-17 $\to$ $+5\%$ 质量后 \textbf{4.71e-02}；
+6R 标称误差 3.10e-16 $\to$ \textbf{4.42e-02}，两者均被检出。
+
+\begin{keybox}{「通过」不是因为测试太松}
+失配自检把「对拍有没有鉴别力」也钉住了。
+\end{keybox}
+
+\begin{warnbox}{科氏项乘积的 $10^{-9}$ 不是模型错误，而是方法下限}
+书侧 $C$ 是 $\partial B/\partial q$ 的\textbf{中心差分近似}（实验一已量化：$h=10^{-5}$ 最优、
+相对误差 7.5e-11），而 \texttt{pin.rnea} 的 $C$ 是解析的；两侧之差就是书侧的差分残差。
+这正是第~\ref{sec:c1sync}~节之后「是否升级 $C$」的定量依据。
+\end{warnbox}
+
+\begin{keybox}{额外旁证（不依赖 Pinocchio）}
+用「独立动能法」（由书链 D-H 递推算质心位置与姿态、数值微分得 $v_n,\omega_n$，
+$T=\sum\frac12m|v|^2+\frac12\omega^{T}(RIR^{T})\omega$）复算 $B$，与书 \texttt{robot\_B} 吻合到
+\textbf{1e-10（2R）/ 1.7e-8（6R）}——即对拍结论不依赖于单一外部库。
+\end{keybox}
+
+\begin{warnbox}{装配对拍中的两个反直觉事实}
+\stage{1} \path{pin.Inertia(m,c,I)} 里的 $I$ 是「\textbf{绕质心}」的惯量（库内部自己做平行轴定理）；
+若再手动加 $m(\|c\|^2E-cc^{T})$ 就会重复计入——实测 $B$ 相对误差从 $10^{-15}$ 恶化到 $10^{-1}$，
+\textbf{而 $g$（只依赖质心位置）仍保持 $\sim10^{-16}$}，故\textbf{不能用 $g$ 单独判定惯量挂对了，
+必须同时看 $g$ 与 $B$}。
+\stage{2} \path{model.addFrame()} 只改 model、不更新已有 \texttt{data}，复用旧 \texttt{data} 会让
+\texttt{data.oMf[fid]} 越界并触发访问违例；\textbf{\texttt{addFrame} 之后必须重建
+\path{data = model.createData()}}——这不是库缺陷。
+\end{warnbox}
+
+\subsection{实验二小结与覆盖边界}
+
+\textbf{结论.} 5 项对拍全部达到机器精度，\textbf{本阶段未走降级方案，故无需声明「未能排除书模型自身出错」}。
+
+\begin{warnbox}{必须记住对拍的覆盖边界}
+它证明的是「书的\textbf{运动学/雅可比/动力学}与 Pinocchio 一致」，\textbf{不覆盖}书中控制律本身
+（那是实验三/四的事），也不覆盖未建模效应（执行器动力学、柔性、真实摩擦）。
+\end{warnbox}
+
+%=======================================================================
+\section{实验三：平面 2R 用例上的端到端贯通（阶段 2）}\label{sec:exp3}
+%=======================================================================
+
+\subsection{验证什么与实验设计}
+
+\textbf{验证什么.} RQ2 的第一层：4 个算法在\textbf{最小用例}（平面 2R）上能否端到端跑通，
+调节控制是否收敛、控制量是否合理、稳态误差是否服从书中给出的增益标度律。
+2R 的价值是「\textbf{能给出机器精度真值、最快暴露接口/符号错误}」。
+
+\textbf{如何验证.} 20 组随机初值（$seed=0$）$\times$ 4 个算法；每条判据的口径都写在共享驱动
+\texttt{test/ctrl\_common/verify\_lib.py} 里，四个算法用\textbf{完全一致}的口径，便于横向比较。
+记录全量轨迹（误差、力矩、$\sigma_{\min}(J_a)$、$\mathrm{cond}(B)$、NaN 标记）。
+
+\begin{warnbox}{用例分工的声明}
+2R 的耦合太弱，\textbf{「关节耦合抑制」必须用 6R 判}（实验四判据 5），用 2R 下该结论会错。
+2R 在本报告中承担的是「贯通 + 相图 + 真值对照」。
+\end{warnbox}
+
+\textbf{结果.} \textbf{判据 4/4 PASS，耗时 607.8 s（10.1 min，修正积分器后重跑）}，
+归档 \texttt{res/2r\_stage2/}。
+
+\subsection{判据 1：链路贯通与数值健康}
+
+\textbf{验证什么.} 仿真链路（轨迹生成 $\to$ 控制器 $\to$ 被控对象积分 $\to$ 记录）是否端到端可用，
+以及四个控制器接口是否统一、有无符号/下标错误。
+
+\textbf{如何验证.} 20 组初值 $\times$ 4 算法全部运行，检查 NaN/Inf 与异常退出。
+
+\textbf{结果.} \texttt{n\_runs}=20、\texttt{n\_nan}=0、\texttt{n\_error}=0（4 个算法全部），判据通过。
+
+\subsection{判据 2--3：收敛性与控制量量级}
+
+\textbf{验证什么.} \stage{1} 调节控制确实收敛（判据 2：20 组初值全部 $\|\tilde q\|_\infty<10^{-3}$ rad）；
+\stage{2} 控制量不饱和（判据 3：$\|u\|_\infty\le200$ N$\cdot$m，即用例力矩上限）。
+
+\textbf{结果.} 判据 2 最差末值 \textbf{9.44e-06}（\texttt{js\_pd}）；判据 3 最差 $\|u\|_\infty$
+\textbf{79.83}（\texttt{os\_pd}）。两项通过（\textbf{不饱和}）。
+
+\subsection{判据 4a/4b：标称稳态误差与未补偿扰动下的 $K_P^{-1}$ 标度律}
+
+\textbf{验证什么.} 书中「稳态误差随 $K_P$ 增大而下降」这一端到端自洽性。
+
+\textbf{如何验证.} 该判据\textbf{原文在本阶段口径下退化}：plant 与控制器模型同源、无摩擦无外力时，
+稳态误差\textbf{理论上恒为 0}（平衡条件 $K_P\tilde q=0$），与 $K_P$ 无关，判据不可证伪。
+故按实测拆为 4a（正向证据）/ 4b（可检验），\textbf{阈值未动}（理由见第~\ref{sec:revisions}~节第 4 条）：
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{4a（标称）}：三档 $K_P$（每档 $\times4$）实测稳态误差\textbf{全部为 0.0}
+  $\Rightarrow$ 证实「同源无扰时恒为 0」；
+\item \textbf{4b（加常值未补偿扰动 $\tau_e$）}：检验 $\tilde q_{ss}\propto K_P^{-1}$ 的单调性与
+  log-log 斜率。
+\end{itemize}
+
+\textbf{结果}如表~\ref{tab:kp2r} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{2R 上 $K_P$ 扫描的标度律（判据 4b）}\label{tab:kp2r}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{1.9cm} p{2.4cm} p{3.6cm} p{2.4cm} c c@{}}
+\toprule
+算法 & 三档 $K_P$ & 三档稳态误差 & log-log 斜率 & 理论 & 结论 \\
+\midrule
+\texttt{js\_pd} & 16 / 64 / 256 & 0.031217 / 0.0078125 / 0.0019531 & \textbf{$-0.9996$} & $-1$ & 通过 \\
+\texttt{js\_invdyn} & 4 / 16 / 64 & 0.38055 / 0.10383 / 0.026940 & \textbf{$-0.9551$} & $-1$ & 通过 \\
+\texttt{os\_pd} & 64 / 256 / 1024 & 0.010092 / 0.0025310 / 0.00063326 & \textbf{$-0.9986$} & $-1$ & 通过 \\
+\texttt{os\_invdyn} & 16 / 64 / 256 & 0.31294 / 0.078623 / 0.019812 & \textbf{$-0.9954$} & $-1$ & 通过 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+四者斜率全部落在阈值 $[-1.30,-0.70]$ 内，且\textbf{单调下降}成立。判据通过。该结果如图~\ref{fig:kp2r} 所示：
+左图是标称（同源、无扰动）工况，稳态误差恒为 0、与 $K_P$ 完全无关，这正是判据 4a 的\textbf{正向证据}；
+右图加入常值未补偿扰动 $\tau_e$ 后，稳态误差随 $K_P$ 每档 $\times4$ 而下降约 4 倍，
+log-log 斜率贴近理论值 $-1$，即判据 4b 所要求的 $K_P^{-1}$ 标度律。
+两幅图并置的意义在于：\textbf{只有右图才是可证伪的检验}——左图的「误差为 0」是模型同源的必然结果，
+不能当作精度的证据。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{kp_sweep_2r.png}
+\caption{2R 增益扫描}\label{fig:kp2r}
+\end{figure}
+
+\subsection{2R 上的逐算法实测指标}
+
+\textbf{验证什么.} 为四个算法在最小用例上留一份可对照的基线性能档案（均值为 20 组初值的
+均值 $\pm$ 标准差；「最差」指 20 组中的极值）。
+
+\textbf{结果}如表~\ref{tab:tab2r} 所示（$T=3.5$ s，$dt=1$ ms；末值一列取自判据 2 的
+\textbf{评测层重算}口径，其余各列为 20 组初值的统计量）。
+
+\begin{table}[H]
+\centering
+\small
+\caption{2R 用例逐算法实测指标（20 组初值）}\label{tab:tab2r}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.0cm} c c c c@{}}
+\toprule
+指标 & \texttt{js\_pd} & \texttt{js\_invdyn} & \texttt{os\_pd} & \texttt{os\_invdyn} \\
+\midrule
+$\|\tilde q\|_\infty$ 末值（最差） & \textbf{9.439e-06} & \textbf{4.060e-12} & \textbf{3.082e-10} & \textbf{3.028e-09} \\
+$\|\tilde q\|_\infty$ 峰值（均值$\pm$标准差） & 0.10560$\pm$0.03293 & 0.105434$\pm$0.033475 & 0.105384$\pm$0.033474 & 0.105677$\pm$0.033202 \\
+$\|\tilde q\|_\infty$ RMS & 0.022516$\pm$0.006483 & 0.022244$\pm$0.006803 & 0.018625$\pm$0.005937 & 0.025875$\pm$0.008016 \\
+调节时间（2\% 带） & 1.1474$\pm$0.1315 s & 0.73235$\pm$0.018568 s & 0.7066$\pm$0.1140 s & 0.9796$\pm$0.0357 s \\
+$\|u\|_\infty$（均值$\pm$标准差，最差） & 26.087$\pm$2.961（33.814） & 29.393$\pm$7.989（52.703） & 33.486$\pm$14.301（\textbf{79.825}） & 26.738$\pm$4.333（38.086） \\
+$\min\sigma_{\min}(J_a)$ & 0.47839$\pm$0.01726 & 0.47840$\pm$0.01734 & 0.47773$\pm$0.01688 & 0.47837$\pm$0.01738 \\
+$\max\operatorname{cond}(B)$ & 13.043$\pm$0.879 & 13.043$\pm$0.883 & 13.075$\pm$0.861 & 13.044$\pm$0.885 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{\texttt{os\_pd} 的任务空间指标}：$\|\tilde x_{\mathrm{pos}}\|$ 峰值 0.15068 m、
+  末值 0.012591 m；到精确解流形的距离 0.011176 rad（逆解残差 1.666e-16 作守卫）。
+\item \textbf{任务空间误差口径}：分开报告 $\|\tilde x_{\mathrm{pos}}\|$（m）与
+  $\|\tilde x_{\mathrm{rot}}\|$（rad）；需要标量时用带\textbf{等效臂长 $\ell=0.5$ m} 的加权范数。
+  \textbf{该口径在图注与文中均显式声明。} 误差含义随位形变化，
+  \textbf{脱离位形谈「1 mm 精度」无意义}——故同时记录 $\sigma_{\min}(J_a)$。
+\end{itemize}
+
+四者的关节误差曲线如图~\ref{fig:err2r} 所示。由图可见，两个逆动力学算法
+（\texttt{js\_invdyn}、\texttt{os\_invdyn}）的末值误差比两个重力补偿 PD 低 3--6 个量级；
+但必须强调，\textbf{这只是调节用例}，其「误差小」源于 $B,C$ 被精确抵消，
+\textbf{不能}据此判断快速跟踪性能——跟踪性能由第~\ref{sec:labor}~节的分工实验回答，
+那里两者的差距被压缩到 130--191 倍，而不是这里的 $10^{3}$--$10^{6}$ 倍。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{err_curves_2r.png}
+\caption{2R 关节误差曲线}\label{fig:err2r}
+\end{figure}
+
+对应的关节力矩曲线如图~\ref{fig:tau2r} 所示，四个算法的 $\|u\|_\infty$ 都在 200 N$\cdot$m 上限内，
+最差为 \texttt{os\_pd} 的 79.83 N$\cdot$m，说明本节所有结论都不是靠「力矩顶到饱和」换来的。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{torque_curves_2r.png}
+\caption{2R 关节力矩曲线}\label{fig:tau2r}
+\end{figure}
+
+\subsection{补充观察（非判据）}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=3pt]
+\item \textbf{相图与吸引域}（图~\ref{fig:phase2r}）：4 个算法在 20 组初值下的相轨迹叠加。
+  如图所示，四条轨迹族均收敛到目标位形，未见极限环或分岔——这为「收敛不是个别初值的巧合」
+  提供了直观旁证（定量结论仍以判据 2 为准）。
+\item \textbf{跟踪冒烟（非判据）}：JS 重力补偿 PD 末态 3.05e-02 rad vs JS 逆动力学 9.02e-06 rad
+  （\textbf{3384$\times$}）；OS 重力补偿 PD 任务空间位置误差末值 1.259e-02 m vs OS 逆动力学
+  2.549e-05 m（\textbf{494$\times$}）。
+\item \textbf{2R 对积分器阶数不敏感}：修正积分器后重跑，末态误差只变 0.2\%--13\%，
+  $\|u\|_\infty$ 与判据 4b 的斜率\textbf{逐位不变}——原因是 2R 的 $\operatorname{cond}(B)\approx13$、
+  步长 1 ms，离散化残差本来就小。这从侧面说明\textbf{积分器 bug 的影响面主要在 6R 的高增益/小惯量方向上}
+  （见第~\ref{sec:integrator}、\ref{sec:revisions}~节）。
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{phase_portrait_2r.png}
+\caption{2R 相轨迹}\label{fig:phase2r}
+\end{figure}
+
+\subsection{实验三小结}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+判据 & 1 跑通 & 2 收敛 & 3 力矩量级 & 4a 标称 & 4b $K_P^{-1}$ \\
+\midrule
+结论 & 通过 & 通过 & 通过 & 通过 & 通过 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{实验三说明的是}：四个算法的最小用例实现正确、链路健康、增益标度律与解析预测一致（斜率 $-1$）。
+\textbf{但不能说明}：书的模型正确（$\to$ 实验二）、完整 6R 上的四类证据是否齐备（$\to$ 实验四）、
+何时失效（$\to$ 实验五）。
+
+%=======================================================================
+\section{实验四：6R 上的正式验证与专项实验（阶段 3）}\label{sec:exp4}
+%=======================================================================
+
+\subsection{验证什么：判定「已验证」所需的四类证据}
+
+本实验是本报告的主体。对\textbf{每一个}算法，判定「已验证」需要四类证据齐备：
+
+\begin{enumerate}[leftmargin=2em,itemsep=2pt]
+\item \textbf{收敛性}——20 组初值全部收敛，并把书中「$J_a$ 列满秩」前提\textbf{定量化}（判据 3a/3b）；
+\item \textbf{误差动态精确性}——逆动力学类：辨识出的 $(\hat\xi,\hat\omega_n)$ 与设定值相对误差 $<2\%$
+  （判据 1，\textbf{最强判据}）；
+\item \textbf{正性能}——无源性（判据 2）/ 双向自洽（判据 6）/ 分工边界（判据 4）/ 耦合抑制（判据 5）；
+\item \textbf{边界}——何时失效，由实验五承担（第~\ref{sec:exp5}~节）。
+\end{enumerate}
+
+\begin{warnbox}{本实验的标称用例是「同源」的}
+plant 与控制器用同一套模型：它只能证明「实现与书中公式自洽」。
+\textbf{排除「书的模型本身错」由实验二承担；模型误差敏感度由实验五承担}（红线 1）。
+\end{warnbox}
+
+\subsection{如何验证：判据—实验块对应与步长口径}
+
+\textbf{结果.} \textbf{判据 6/6 PASS，完整一键跑 2504.6 s（41.7 min）}，归档 \texttt{res/6r\_stage3/}。
+
+\begin{table}[H]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.0cm} p{6.0cm} p{7.5cm}@{}}
+\toprule
+判据 & 承载的算法内检查 & 主要实验块 \\
+\midrule
+1 误差动态 $(\hat\xi,\hat\omega_n)$ & \texttt{js\_invdyn}、\texttt{os\_invdyn} & 20 组初值批次 + $dt{=}1$ ms/$T{=}3.0$ s 重跑 \\
+2 无源性 & \texttt{js\_pd}（补充记录 \texttt{js\_invdyn}） & Lyapunov 数值积分 \\
+3a/3b 收敛性 & 4 个算法 & 20 组初值批次（含 \texttt{ic\_rows} 逐组明细） \\
+4 JS/OS 分工 & 4 个算法（成对） & 同一轨迹三种时长 \\
+5 耦合抑制 & 4 个算法（成对） & 单关节快速轨迹 + $dt/2$ 复算 \\
+6 OS 双向自洽 & \texttt{os\_pd}、\texttt{os\_invdyn} & 24 个随机状态的映射一致性 \\
+（辅助）增益标度律 & \texttt{os\_pd}、\texttt{os\_invdyn} & $K_P$ 每档 $\times10$ 的扫描 \\
+（辅助）步长探针 & 两个逆动力学算法 & \texttt{probe\_fit\_dt.py} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{本批次有两套步长，报告全部写明}，如表~\ref{tab:dt} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{各实验块所用积分步长}\label{tab:dt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{6.0cm} p{9.5cm}@{}}
+\toprule
+用途 & 步长 \\
+\midrule
+实验四的调节/专项实验（收敛、分工、耦合、自洽） & 主步长 \textbf{$dt=2$ ms} \\
+\textbf{判据 1（误差动态拟合）的判定} & \textbf{$dt=1$ ms}（计划原定默认步长） \\
+实验五 模型失配 & $dt=2$ ms \\
+实验五 奇异主扫描 / 测量噪声 & $dt=1$ ms \\
+实验五 摩擦 & $dt=0.5$ ms（与 $\varepsilon$ 配对，见第~\ref{sec:friction}~节） \\
+实验五 控制周期 / 失稳二分 & $dt=0.5$ ms / $dt\in\{2,0.5\}$ ms \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{判据 3：收敛性（含书中前提的定量化）}
+
+\textbf{验证什么.} \stage{1} 在书中声明的前提（「$J_a$ 列满秩」）\textbf{成立}时，四个算法必须
+\textbf{全部收敛}（判据 3a：20 组初值全部 $\|\tilde q\|_\infty<10^{-3}$ rad）；
+\stage{2} 前提被违反的初值\textbf{如实单列}为边界样本（判据 3b），不混入通过条件。
+
+\textbf{如何验证.} 前提的定量化取 $\operatorname{cond}(J_a)\le100$（标称位形实测 12.70，
+留近 8 倍余量），由仿真层记录的 $\sigma_{\max}/\sigma_{\min}(J_a)$（同一次 SVD，零额外成本）逐点计算。
+
+\textbf{结果}如表~\ref{tab:conv6r} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{6R 上四个算法的收敛性与控制量（判据 3a/3b）}\label{tab:conv6r}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{1.9cm} p{1.8cm} p{2.3cm} p{2.3cm} p{2.4cm} p{4.8cm}@{}}
+\toprule
+算法 & 收敛（3a） & \makecell{最差末值\\$\|\tilde q\|_\infty$} & \makecell{最差\\$\|u\|_\infty$} & \makecell{最大\\$\operatorname{cond}(J_a)$} & 边界样本（3b） \\
+\midrule
+\texttt{js\_pd} & \textbf{20/20} & 6.023e-06 & 73.036 & 46.47 & --- \\
+\texttt{js\_invdyn} & \textbf{20/20} & \textbf{1.068e-06} & 71.782 & 46.47 & --- \\
+\texttt{os\_pd} & \textbf{18/18}（前提内） & 1.328e-07 & \textbf{189.348}（接近 200 上限） & 46.449 & 2 组（\texttt{ic05}/\texttt{ic10}） \\
+\texttt{os\_invdyn} & \textbf{20/20} & 7.276e-05 & 58.373 & 46.50 & --- \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+判据 3a 通过；3b 由 \texttt{os\_pd} 的 2 组样本构成（如实记录，见第~\ref{sec:singular}~节的失效点分析）。
+
+\begin{warnbox}{\texttt{os\_pd} 的 3a 子集 $\|u\|_\infty$ 上限 189.3 N$\cdot$m 值得注意}
+它离用例力矩上限 200 只差 5\%，即\textbf{「前提成立」并不等于「控制量一定宽裕」}。
+\end{warnbox}
+
+\begin{warnbox}{一处必须声明的口径（红线 3 的第二次落地）}
+OS 用例的 $\tilde q$ 在\textbf{仿真记录里恒为 0}——按第~\ref{sec:redlines}~节的红线，
+\texttt{ref} 只含 $x_d$，\textbf{绝不能把逆解出的 $q_d$ 喂给 OS 控制器}（那会把 OS 控制偷偷变成 JS 控制）。
+故评测层一律用\textbf{实验者选定的目标位形} $q_d$（$x_d=\mathrm{fk}(q_d)$，\textbf{不是逆解结果}）重算
+$\tilde q$，并另附「到精确解流形的距离」（末态逆解，仅评测参照）。
+若直接拿记录里的 $\tilde q$ 判「20 组全部收敛」，判据会\textbf{无条件通过}。
+\end{warnbox}
+
+6R 上 20 组初值批次的误差与力矩全貌分别如图~\ref{fig:err6r} 与图~\ref{fig:tau6r} 所示。
+图~\ref{fig:err6r} 中四个算法的末值误差都远低于判据 3a 的 $10^{-3}$ rad；
+\texttt{os\_pd} 的 2 组边界样本（瞬态掠过奇异区）不在此判据内（见第~\ref{sec:singular}~节）。
+图~\ref{fig:tau6r} 则给出对应的力矩量级：\texttt{os\_pd} 的前提内批次 $\|u\|_\infty$ 上限达 189.3 N$\cdot$m
+（上限 200），两个逆动力学算法约 58--72 N$\cdot$m——这正是上面那条「前提成立不等于控制量宽裕」
+的图示依据。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{err_curves_6r.png}
+\caption{6R 关节误差曲线}\label{fig:err6r}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{torque_curves_6r.png}
+\caption{6R 关节力矩曲线}\label{fig:tau6r}
+\end{figure}
+
+\subsection{判据 1：逆动力学误差动态的精确性（本报告最强判据）}\label{sec:c1}
+
+\textbf{验证什么.} 逆动力学控制的核心解析预测是：闭环误差满足
+$\ddot{\tilde q}+K_D\dot{\tilde q}+K_P\tilde q=0$，即\textbf{单位质量、逐分量解耦}的二阶系统。
+这是「控制律实现正确」的最硬证据——它同时检验 $B,C,g$ 的抵消、$\dot J_a$ 的落地、
+以及增益的自洽性。判据要求辨识出的 $(\hat\xi,\hat\omega_n)$ 与设定值相对误差 $<2\%$。
+
+\textbf{如何验证.} 在同一批初值上以 $dt=1$ ms、观测窗 $T=3.0$ s 重跑，设定 $\xi=0.30$、
+$\omega_n=6.0$ rad/s；用对数衰减率法对\textbf{带符号误差取正极大值}辨识
+$(\hat\xi,\hat\omega_n)$，每个分量都取到 \textbf{3 个正峰}。
+
+\begin{warnbox}{观测窗由 2.4 s 放宽到 3.0 s}
+按\textbf{正峰个数}而非总时长取窗（$T_d=1.098$ s，正峰在
+$T_d/2\cdot\{1,3,5\}=0.549/1.647/2.745$ s；2.4 s 只含 2 个正峰 = 下限）。
+\end{warnbox}
+
+\textbf{结果（\texttt{js\_invdyn}，6 个关节分量）}如表~\ref{tab:jsfit} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{\texttt{js\_invdyn} 误差动态辨识（6R，设定 $\xi=0.30$、$\omega_n=6.0$）}\label{tab:jsfit}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+分量 & $\hat\xi$ & $\hat\omega_n$ & $\xi$ 相对误差 & $\omega_n$ 相对误差 \\
+\midrule
+$\tilde q_1$ & 0.29857 & 6.00408 & 0.477\% & 0.068\% \\
+$\tilde q_2$ & 0.29940 & 6.00572 & 0.199\% & 0.095\% \\
+$\tilde q_3$ & 0.29790 & 6.00550 & 0.700\% & 0.092\% \\
+$\tilde q_4$ & 0.29984 & 6.00386 & 0.052\% & 0.064\% \\
+$\tilde q_5$ & 0.29886 & 6.00466 & 0.379\% & 0.078\% \\
+\textbf{$\tilde q_6$} & 0.30383 & 6.00360 & \textbf{1.276\%} & 0.060\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{结果（\texttt{os\_invdyn}，6 个任务空间分量）}如表~\ref{tab:osfit} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{\texttt{os\_invdyn} 误差动态辨识（6R，同设定）}\label{tab:osfit}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+分量 & $\hat\xi$ & $\hat\omega_n$ & $\xi$ 相对误差 & $\omega_n$ 相对误差 \\
+\midrule
+$\tilde x_1$ & 0.29833 & 6.00635 & \textbf{0.556\%} & 0.106\% \\
+$\tilde x_2$ & 0.30068 & 6.00552 & 0.227\% & 0.092\% \\
+$\tilde x_3$ & 0.29986 & 6.00388 & 0.047\% & 0.065\% \\
+$\tilde x_4$ & 0.29834 & 6.00363 & 0.552\% & 0.061\% \\
+$\tilde x_5$ & 0.29881 & 6.00455 & 0.398\% & 0.076\% \\
+$\tilde x_6$ & 0.30046 & 6.00781 & 0.154\% & 0.130\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+$\Rightarrow$ \textbf{6 个分量全部达标}（\texttt{js\_invdyn} 最差 \textbf{1.2764\%}、
+\texttt{os\_invdyn} 最差 \textbf{0.5563\%}）；$\omega_n$ 准到 0.10\% 以内。判据通过。
+辨识过程的原始拟合曲线如图~\ref{fig:logdec} 所示：该图以 \texttt{js\_invdyn} 为例，
+对带符号误差取正极大值后做对数衰减率拟合，每个分量含 3 个正峰
+（$dt=1$ ms、$T=3.0$ s，设定 $\xi=0.30$、$\omega_n=6.0$ rad/s）。
+把图与上表对照可以看出，拟合直线的斜率即对应 $\hat\xi$，
+而各分量的相对误差都在 1\% 量级以下——这正是「误差动态被精确线性化」的图形证据。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{logdec_fit_6r.png}
+\caption{对数衰减率拟合}\label{fig:logdec}
+\end{figure}
+
+\begin{warnbox}{特有发现（必须与判定值一起读，并进局限）}
+判据 1 的判定值 \textbf{1.2764\%} 离 2\% 阈值只有 \textbf{1.6 倍余量}，
+且它是\textbf{系统性}的 $O(dt)$ 偏差，不是随机噪声——
+\textbf{该判据的达标与步长强相关}，见第~\ref{sec:dtprobe}~节。
+\end{warnbox}
+
+\subsection{判据 2：重力补偿 PD 的无源性}
+
+\textbf{验证什么.} 书中对 JS 重力补偿 PD 给出的 Lyapunov 等式
+$\dot V=-\dot q^{T}(F_f+J_a^{T}K_DJ_a)\dot q\le0$
+（$V=\frac12\dot q^{T}B\dot q+\frac12\tilde q^{T}K_P\tilde q$）是否在数值上成立——
+即闭环\textbf{不产生正功事件}。
+
+\textbf{如何验证.} 取 $F_f=0$、无外力，沿闭环轨迹数值积分 $V$
+（6R、$T=1.5$ s、初值扰动 0.15 rad、$seed=7$），检查正功占比与逐点上界。
+
+\textbf{结果.} $V(0)\to V(T)$：\textbf{2.229157 $\to$ 2.610e-08}（下降 8 个量级）；
+正功占比 $\Sigma\max(\Delta V,0)/\|V(0)\|$ = \textbf{8.150e-10}（阈值 $<10^{-6}$）；
+逐点 $V\le V(0)(1+10^{-6})$ \textbf{成立}。
+$\Rightarrow$ 书中那个 Lyapunov 等式在数值上成立。判据通过。
+
+该过程如图~\ref{fig:passivity} 所示：Lyapunov 函数 $V$ 单调下降到 8 个量级以下，
+正功占比 8.15e-10，逐点满足 $V\le V(0)(1+10^{-6})$。
+图中「无正功尖峰」这一形态本身就是结论——若控制律实现有符号错误，
+会在图上表现为 $V$ 的台阶式上升（能量被注入），而这里看不到这种形态。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{passivity_6r.png}
+\caption{无源性验证}\label{fig:passivity}
+\end{figure}
+
+\begin{warnbox}{阈值放宽的理由（$10^{-10}$ 放宽到 $10^{-6}$，见第~\ref{sec:revisions}~节第 11 条）}
+旧阈值隐含「逐点单调」，只在\textbf{旧的（有 bug 的）一阶积分器}下成立；
+正确的四阶 RK4 带 $\sim10^{-9}$ 可逆波动。\textbf{鉴别力不受影响}——
+真正的能量注入会给出 $O(1)$ 的正功占比。
+\end{warnbox}
+
+\begin{keybox}{补充记录（非计划判据）}
+\texttt{js\_invdyn} 精确线性化后的单位质量能量
+$V=\frac12\|\dot{\tilde q}\|^2+\frac12\tilde q^{T}K_P\tilde q$，
+正功占比 \textbf{1.020e-09}、逐点 $V\le V(0)(1+10^{-6})$ 成立。
+\end{keybox}
+
+\subsection{判据 6：OS 控制的双向自洽}
+
+\textbf{验证什么.} OS 控制中「关节力矩 $\tau$ $\leftrightarrow$ 操作力 $F$」的映射是否正确落地：
+$F=J_a^{-T}(u-g)$ 应等于设计意图 $K_P\tilde x-K_DJ_a\dot q$，
+且功率应满足 $\langle u-g,\dot q\rangle=\langle F,J_a\dot q\rangle$。
+它检验转置雅可比映射与任务惯量 $J_a^{-T}BJ_a^{-1}$ 的实现。
+
+\textbf{如何验证.} 在 24 个随机状态上比较映射误差与功率一致性。
+
+\textbf{结果.} $F$ 映射最大相对误差：\texttt{os\_pd} \textbf{3.586e-16}、
+\texttt{os\_invdyn} \textbf{3.318e-15}（阈值 $<10^{-12}$，通过）；
+功率一致性：\textbf{1.249e-15} / \textbf{6.383e-16}（通过）。
+
+\textbf{关键证据 3——$\dot x_e\approx J_a\dot q$ 一阶近似的偏差}（书中用该近似，本报告量化其误差）：
+沿固定方向把初值误差 $\delta$ 从 1e-3 rad 拉到 0.891 rad（12 个点），如表~\ref{tab:linbias} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{$\dot x_e\approx J_a\dot q$ 一阶近似的偏差随 $\delta$ 的变化}\label{tab:linbias}
+\begin{tabular}{@{}cccc@{}}
+\toprule
+$\delta$ & 相对偏差 & 绝对偏差 & $\|x_{\mathrm{rot}}\|$ / 真实姿态角 \\
+\midrule
+1.0e-03 & 4.750e-04 & 1.084e-06 & 1.0417 \\
+0.01182 & 5.594e-03 & 1.505e-04 & 1.0401 \\
+0.25920 & 1.121e-01 & 6.372e-02 & 1.0191 \\
+\textbf{0.89125} & \textbf{2.772e-01} & \textbf{5.086e-01} & 1.0284 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{相对偏差斜率 0.9584}（理论 1）、\textbf{绝对偏差斜率 1.9465}（理论 2）
+  $\Rightarrow$ \textbf{绝对偏差 $\propto\delta^2$，超线性增长}，与「一阶近似」的判断一致；
+\item 且 $\|x_{\mathrm{rot}}\|$（欧拉角差）与真实姿态角之比在本用例位形附近\textbf{并非 1}
+  （1.019--1.042），\textbf{故任务空间误差范数口径必须显式声明}（本报告用 $\ell=0.5$ m）；
+\item 守卫：欧拉角 $\leftrightarrow$ 旋转矩阵往返最大偏差 \textbf{1.110e-16}。
+\end{itemize}
+
+\subsection{判据 4：JS/OS 分工边界}\label{sec:labor}
+
+\textbf{验证什么.} 书中论断「重力补偿 PD 适用于慢速、逆动力学控制用于快速跟踪」是否有定量依据。
+
+\textbf{如何验证.} 同一条关节空间轨迹按三种时长（$T=1.6/0.8/0.4$ s，
+最快一档峰加速度 \textbf{12.63 rad/s$^2$}）各跑一对控制器，比较峰值误差。
+
+\textbf{结果}如表~\ref{tab:labor} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{JS/OS 分工边界：同一轨迹三种时长下的峰值误差}\label{tab:labor}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+轨迹 & 重力补偿 PD 峰值误差 & 逆动力学峰值误差 & 倍数 \\
+\midrule
+JS：$T=1.6$ s & 0.093965 & 4.913e-04 & 191$\times$ \\
+JS：$T=0.8$ s & 0.161344 & 9.476e-04 & 170$\times$ \\
+\textbf{JS：$T=0.4$ s（最快）} & \textbf{0.237950} & \textbf{1.831e-03} & \textbf{130.0$\times$} \\
+OS：$T=0.4$ s（最快） & 0.971228 & 0.007126 & \textbf{136.3$\times$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item 判据：最快轨迹下 $err_{PD}/err_{invdyn}\ge10$ $\to$ 实测 \textbf{130.0$\times$/136.3$\times$}，通过；
+\item \textbf{如实列出的偏差}：逆动力学误差随速度\textbf{也}在上升（1.83e-3 对 4.91e-4，3.7$\times$），
+  即「与轨迹速度基本无关」这一原文表述在\textbf{离散实现}下并不严格成立——
+  它仍有 $O(dt)$ 的零阶保持残差（见第~\ref{sec:coupling}~节的步长归因）。
+\end{itemize}
+
+该结果如图~\ref{fig:speed} 所示。图中同一条轨迹的三种时长并排给出：
+逆动力学算法的峰值误差比重力补偿 PD 低 130--191 倍；但要注意两条曲线\textbf{都}随轨迹加快而上升，
+倍数随速度由 191 收窄到 130——这正说明「分工」是定量而非定性的差距，
+也解释了为什么本判据把阈值定在 10 倍而不是更高。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{speed_compare_6r.png}
+\caption{JS/OS 分工边界}\label{fig:speed}
+\end{figure}
+
+\subsection{判据 5：关节耦合抑制（必须用 6R）}\label{sec:coupling}
+
+\textbf{验证什么.} 书中的定性论断「逆动力学控制能抑制关节间耦合」是否成立。
+
+\textbf{如何验证.} 给第 1 关节一条 0.5 rad / 0.5 s 的快速轨迹，测量其余关节的\textbf{非指令位移}峰值。
+
+\textbf{结果}如表~\ref{tab:coupling} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{关节耦合抑制（6R）}\label{tab:coupling}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+控制器 & 非指令位移峰值 & 占指令幅度 0.5 rad 的比例 & $\|u\|_\infty$ \\
+\midrule
+重力补偿 PD & \textbf{2.016e-02 rad} & 4.032\% & 45.789 \\
+逆动力学 PD & \textbf{3.195e-04 rad} & 0.0639\% & 46.519 \\
+比值 & \textbf{63.1$\times$} & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item 判据：逆动力学 $<10^{-3}$ rad 且比值 $\ge10$，通过；
+\item \textbf{逆动力学的「接近零」有一个离散化地板}：同一用例在 $dt/2$ 上重跑 $\to$
+  \textbf{1.595e-04 rad}，比主步长降 \textbf{2.00$\times$}，与\textbf{零阶保持的 $O(dt)$ 残差}一致
+  （理论 2.00$\times$）。连续时间下该位移\textbf{理论恒为 0}
+  （$\ddot q=y$ 精确线性化 + $\ddot q_{d,j}=0$），故这是\textbf{数值残差，不是控制律错误}——
+  若它是控制律错误，它不会随 $dt$ 收敛到 0。
+\end{itemize}
+
+该结果如图~\ref{fig:coupling} 所示：图中上、下两条曲线分别是重力补偿 PD 与逆动力学 PD 下
+其余关节的非指令位移，前者峰值 2.016e-02 rad、后者 3.195e-04 rad，差 63.1 倍；
+逆动力学那条曲线还叠加了 $dt/2$ 复算的结果，可以看到峰值恰好减半——
+这一步复算正是把「小」与「对」区分开的关键。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{coupling_6r.png}
+\caption{关节耦合抑制}\label{fig:coupling}
+\end{figure}
+
+\subsection{辅助实验：误差—增益标度律}
+
+\textbf{验证什么.} 在常值未补偿扰动下，两类算法的稳态误差是否都满足
+$\tilde x_{ss}=-K_P^{-1}(\cdot)\tau_e$（即 $K_P$ 每乘 10、误差降一个量级）。
+
+\textbf{如何验证.} 常值未补偿扰动 $\tau_e=[0,0.5,0.5,0.5,0.2,0.2,0.2]$ N$\cdot$m 下，
+扫描 $\omega_n\in\{8,25.298,80\}$（$K_P$ 每档 $\times10$）。
+
+\textbf{结果}如表~\ref{tab:kp6r} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{6R 上 OS 两算法的误差—增益标度律}\label{tab:kp6r}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+算法 & 三档误差 & log-log 斜率 & 首末比 & 理论 \\
+\midrule
+\texttt{os\_pd} & 6.4715 $\to$ 0.57965 $\to$ 0.057834 & \textbf{$-1.0244$} & 111.9$\times$ & $-1$ \\
+\texttt{os\_invdyn} & 5.1226 $\to$ 0.58279 $\to$ 0.057872 & \textbf{$-0.9735$} & 88.5$\times$ & $-1$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+两类算法在常值未补偿扰动下都满足 $\tilde x_{ss}=-K_P^{-1}(\cdot)\tau_e$，
+斜率都在 $[-1.15,-0.85]$ 内，通过。该结果如图~\ref{fig:kp6r} 所示，
+两条 log-log 直线分别给出 $-1.0244$ 与 $-0.9735$ 的斜率（理论 $-1$），
+且三档点几乎共线——说明标度律在 $K_P$ 变化两个量级的范围内都成立。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{kp_sweep_6r.png}
+\caption{误差增益标度律}\label{fig:kp6r}
+\end{figure}
+
+\begin{warnbox}{一处未定位的异常（如实列出，不掩盖）}
+\texttt{os\_invdyn} 第一档（$\omega_n=8$、$K_P=64$）的 $\|u\|_\infty$ 记录到
+\textbf{$6.09\times10^{39}$}，而该档的末态/峰值误差是\textbf{有限的}（末态 5.1226、单调、斜率正常）。
+归档只保留聚合量、\textbf{未保留该档的逐点轨迹}，故其成因（瞬态数值溢出？某一步的病态 $J_a^{-1}$？）
+本批次\textbf{未定位}。本报告只把该档用于斜率拟合，\textbf{不据此下任何稳定性结论}；
+该异常列入第~\ref{sec:negative}~节。
+\end{warnbox}
+
+\subsection{判据 1 的步长敏感性与离散化归因}\label{sec:dtprobe}
+
+\textbf{验证什么.} 判据 1 的达标值离阈值只有 1.6 倍余量（第~\ref{sec:c1}~节）——必须回答：
+这个偏差是\textbf{控制律/公式的问题}，还是\textbf{离散化残差}？这决定了结论的性质。
+
+\textbf{如何验证.} 用定点探针 \texttt{scripts/probe\_fit\_dt.py}（\textbf{同设定、同初值、同增益}，
+只改积分步长）在 $dt=2/1/0.5$ ms 上逐分量重新辨识 $(\hat\xi,\hat\omega_n)$，
+并检验它是否按一阶收敛。
+
+\textbf{结果.} $dt=2$ ms 下最小惯量关节 $\tilde q_6$（$B_{66}=1.200\times10^{-3}$）的 $\hat\xi$
+曾有 \textbf{+2.93\%} 的\textbf{系统性}偏差；探针证明它\textbf{随 $dt$ 按一阶收敛}，如表~\ref{tab:probe} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{判据 1 的步长定点探针（逐分量重新辨识 $\hat\xi$）}\label{tab:probe}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.3cm} p{2.9cm} c c c p{2.6cm}@{}}
+\toprule
+探针口径 & 算法 & $dt=2$ ms & $dt=1$ ms & $dt=0.5$ ms & 经验阶（2$\to$1 / 1$\to$0.5） \\
+\midrule
+$T=2.4$ s & \texttt{js\_invdyn}（最差分量） & \textbf{2.598\%} & \textbf{1.239\%} & \textbf{0.605\%} & 1.068 / 1.034 \\
+$T=2.4$ s & \texttt{os\_invdyn}（最差分量） & \textbf{1.115\%} & \textbf{0.556\%} & \textbf{0.278\%} & 1.003 / 1.002 \\
+$T=3.0$ s（\textbf{判定口径}） & \texttt{js\_invdyn} & \textbf{2.749\%} & \textbf{1.276\%} & --- & 1.107 \\
+$T=3.0$ s（\textbf{判定口径}） & \texttt{os\_invdyn} & \textbf{1.115\%} & \textbf{0.556\%} & --- & 1.003 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+$\Rightarrow$ 偏差是\textbf{零阶保持 + RK4 的离散化残差}，外推到 $dt\to0$ 即为 0；
+\textbf{不是控制律错误，也不是书的公式错误}。判据 1 因此在 $dt=1$ ms 上判定（阈值 2\% 未动）。
+
+\begin{warnbox}{为什么必须单独用 1 ms}
+因为 $dt=2$ ms 下 \texttt{js\_invdyn} 的判定值 \textbf{2.749\%} 会\textbf{超阈值}；
+若不同时报告这两点，读者无法判断该判据对步长的依赖程度。
+\end{warnbox}
+
+\textbf{归档内的一致证据}：\texttt{fit\_dt\_probe}（$T=3.0$/$dt=1$ ms）与归档判据 1 \textbf{逐位一致}
+（\texttt{js\_invdyn} 的 $\tilde q_6$：1.2764\% vs 1.2764\%；\texttt{os\_invdyn} 的 $\tilde x_1$：
+0.5563\% vs 0.5563\%）。\textbf{归档同时报告 $dt=2$ ms（2.749\%，超阈值）与
+$dt=0.5$ ms（0.605\%）两点。}
+
+\textbf{附带的结案：$C$ 的中心差分近似在此用例里不进入闭环}——控制器与被控对象同源时
+$B,C,g$ 在采样点上精确抵消（$\ddot q\equiv y$）。这就关闭了第~\ref{sec:c1sync}~节之后留下的
+「是否升级解析 Christoffel」这一开放问题。
+
+\begin{warnbox}{归档元数据的一处笔误已在实验五收口时更正}
+\texttt{res/6r\_stage4/result.json} 的 \texttt{experiment.noise.dt\_s} 原写作 2 ms
+（与 \texttt{singular.dt\_s} 同类的写错），而噪声实验实际用 \textbf{1 ms}
+（实验块自己的 \texttt{measurement\_noise.dt} 字段就是 \texttt{1e-3}）。
+已按「只改元数据、不重跑仿真」的口径更正，并在归档的 \texttt{post\_run\_refreshes} 追加记录、
+备份为 \path{result.json.noise-dt.bak}；\texttt{run\_stage4.py} 同步修正。
+\textbf{全部实测数字不变。}
+\end{warnbox}
+
+\subsection{四个算法在 6R 上的完整实测数据与逐算法结论}\label{sec:peralgo}
+
+\subsubsection{（a）JS 重力补偿 PD（\texttt{algo:robctrl\_js\_pd}）}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=3pt]
+\item \textbf{结论：验证通过。} 收敛性、无源性、分工边界、耦合抑制四项均达标；无特有的负结果。
+\item \textbf{复现}：\texttt{test/ctrl\_js/test\_js\_pd.py}；种子 = \textbf{0}；实验三（2R）$\omega_n=8$，
+  实验四（6R）$\omega_n=8$、$\Lambda=B(q_d)$、$\xi=1.0$。
+\item \textbf{实测指标}（20 组初值，均值 $\pm$ 标准差）如表~\ref{tab:js_pd} 所示。
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\caption{\texttt{js\_pd} 在 2R 与 6R 上的实测指标}\label{tab:js_pd}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.2cm} c c@{}}
+\toprule
+指标 & 2R（实验三，$T{=}3.5$ s） & 6R（实验四，$T{=}2.0$ s） \\
+\midrule
+$\|\tilde q\|_\infty$ 末值 & \textbf{9.439e-06}（最差） & 2.109e-06$\pm$1.367e-06（最差 6.023e-06） \\
+$\|\tilde q\|_\infty$ 峰值 & 0.10560$\pm$0.03293 & 0.35328$\pm$0.04615 \\
+$\|\tilde q\|_\infty$ RMS & 0.022516$\pm$0.006483 & 0.100732$\pm$0.012028 \\
+调节时间（2\% 带） & 1.1474$\pm$0.1315 s & 0.8080$\pm$0.0648 s \\
+$\|u\|_\infty$ & 26.087$\pm$2.961（最差 33.814） & 54.750$\pm$6.551（最差 73.036） \\
+$\min\sigma_{\min}(J_a)$ & 0.47839$\pm$0.01726 & 0.099929$\pm$0.037632（最小 0.038412） \\
+$\max\operatorname{cond}(J_a)$ & --- & 22.81$\pm$10.38（最大 46.47） \\
+$\max\operatorname{cond}(B)$ & 13.043$\pm$0.879 & 1705.1$\pm$36.4 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{关键证据（无源性）}：见第~\ref{sec:c1}~节（正功占比 \textbf{8.150e-10}，图~\ref{fig:passivity}）。
+\item \textbf{特有发现}：\textbf{6R 上必须按参考惯量标定 $K_P,K_D$}（$\Lambda=B(q_d)$），
+  否则 $K_P=\omega_n^2I$ 会让最小惯量方向的阻尼速率超出 $dt$ 的 RK4 稳定域，
+  表现为 $\|u\|$ 爆炸（\texttt{1e305}）——这是\textbf{离散化失稳}，不是控制律错误
+  （第~\ref{sec:instab}~节给出定量证据）。
+\end{itemize}
+
+\subsubsection{（b）JS 逆动力学 PD（\texttt{algo:robctrl\_js\_invdyn}）}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=3pt]
+\item \textbf{结论：验证通过。} 误差动态（\textbf{本报告最强判据}）在 $dt=1$ ms 上最差
+  \textbf{1.2764\%}（阈值 2\%）；收敛、无源性（补充记录）、分工、耦合抑制全部达标。
+\item \textbf{复现}：\texttt{test/ctrl\_js/test\_js\_invdyn.py}；种子 = \textbf{0}；
+  $\omega_n=8$（2R 与 6R）、$\xi=1.0$、$K_P=\omega_n^2I$（\textbf{书中原式}，不做惯量标定）。
+\item \textbf{实测指标}如表~\ref{tab:js_invdyn} 所示。
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\caption{\texttt{js\_invdyn} 在 2R 与 6R 上的实测指标}\label{tab:js_invdyn}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.2cm} c c@{}}
+\toprule
+指标 & 2R（$T{=}3.5$ s） & 6R（$T{=}2.0$ s） \\
+\midrule
+$\|\tilde q\|_\infty$ 末值 & \textbf{4.060e-12}（最差） & 8.362e-07$\pm$1.432e-07（最差 1.068e-06） \\
+$\|\tilde q\|_\infty$ 峰值 & 0.105434$\pm$0.033475 & 0.353260$\pm$0.046400 \\
+$\|\tilde q\|_\infty$ RMS & 0.022244$\pm$0.006803 & 0.099612$\pm$0.012597 \\
+调节时间（2\% 带） & 0.73235$\pm$0.018568 s & 0.7335$\pm$0.0085 s \\
+$\|u\|_\infty$ & 29.393$\pm$7.989（最差 52.703） & 54.629$\pm$6.442（最差 71.782） \\
+$\min\sigma_{\min}(J_a)$ & 0.47840$\pm$0.01734 & 0.099964$\pm$0.037599 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{关键证据}：误差动态精确性（表~\ref{tab:jsfit}、图~\ref{fig:logdec}）；
+  无源性补充记录（正功占比 \textbf{1.020e-09}）。
+\item \textbf{特有发现（必须进局限）}：判据 1 的判定值 \textbf{1.2764\%} 离 2\% 阈值只有
+  \textbf{1.6 倍余量}，且它是\textbf{系统性}的 $O(dt)$ 偏差（第~\ref{sec:dtprobe}~节）。
+\item 误差曲线与力矩曲线：图~\ref{fig:err6r}、图~\ref{fig:tau6r}。
+\end{itemize}
+
+\subsubsection{（c）OS 重力补偿 PD（\texttt{algo:robctrl\_os\_pd}）}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=3pt]
+\item \textbf{结论：验证通过（有明确边界）。} 在书中声明的「$J_a$ 列满秩」前提成立时全部收敛；
+  2 组初值\textbf{瞬态掠过奇异区}，如实单列为边界样本（第~\ref{sec:singular}~节给出失效点）。
+\item \textbf{复现}：\texttt{test/ctrl\_os/test\_os\_pd.py}；种子 = \textbf{0}；$\omega_n=12$（2R 与 6R）、
+  $\xi=1.0$、$\Lambda=(J_aB^{-1}J_a^{T})^{-1}$（任务惯量）。
+\item \textbf{实测指标}（2R 为实验三；6R 为实验四的 20 组，其中 2 组为边界样本，故分列）
+  如表~\ref{tab:os_pd} 所示。
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\caption{\texttt{os\_pd} 在 2R 与 6R 上的实测指标（6R 分 3a 子集与边界样本）}\label{tab:os_pd}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.2cm} c c c@{}}
+\toprule
+指标 & 2R（20 组） & 6R 3a 子集（18 组） & 6R 边界样本（2 组） \\
+\midrule
+$\|\tilde q\|_\infty$ 末值 & \textbf{3.082e-10}（最差） & 1.659e-08（最差 \textbf{1.328e-07}） & 最差 \textbf{6.728e+46}（\texttt{ic05}） \\
+$\|\tilde q\|_\infty$ 峰值 & 0.105384$\pm$0.033474 & 最坏 0.7828 & 8.522e+46 \\
+调节时间（2\% 带） & 0.7066$\pm$0.1140 s & 0.796$\pm$0.428 s & ---（不平息） \\
+$\|u\|_\infty$ & 33.486$\pm$14.301（最差 79.825） & \textbf{最差 189.348}（接近 200 上限） & 2.465e+50 \\
+$\min\sigma_{\min}(J_a)$ & 0.47773$\pm$0.01688 & 最小 0.038385 & \textbf{3.682e-06}（\texttt{ic05}） \\
+$\max\operatorname{cond}(J_a)$ & --- & 最大 46.449 & \textbf{5.077e+05}（\texttt{ic05}）/ 132.35（\texttt{ic10}） \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{关键证据}：双向自洽（映射误差 \textbf{3.586e-16}，见第~\ref{sec:c1}~节后的判据 6）；
+  分工边界 \textbf{136.3$\times$}（表~\ref{tab:labor}）。
+\item \textbf{特有发现}：OS 的失效模式是「\textbf{推不动}」——只用 $J_a^{T}$ 时反馈力矩有界，
+  误差不衰减（第~\ref{sec:singular}~节）。
+\end{itemize}
+
+\subsubsection{（d）OS 逆动力学 PD（\texttt{algo:robctrl\_os\_invdyn}）}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=3pt]
+\item \textbf{结论：验证通过（有明确边界）。} 误差动态最差 \textbf{0.5563\%}、双向自洽达机器精度、
+  20/20 收敛；其\textbf{奇异边界}（$\sigma_{\min}\le10^{-4}$）比 \texttt{os\_pd} 更靠后
+  但\textbf{失效更剧烈}（力矩爆），见第~\ref{sec:singular}~节。
+\item \textbf{复现}：\texttt{test/ctrl\_os/test\_os\_invdyn.py}；种子 = \textbf{0}；$\omega_n=6$、
+  $\xi=1.0$、$K_P=\omega_n^2I$。
+\item \textbf{实测指标}如表~\ref{tab:os_invdyn} 所示。
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\caption{\texttt{os\_invdyn} 在 2R 与 6R 上的实测指标}\label{tab:os_invdyn}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.2cm} c c@{}}
+\toprule
+指标 & 2R（$T{=}3.5$ s） & 6R（$T{=}2.0$ s，20/20） \\
+\midrule
+$\|\tilde q\|_\infty$ 末值 & \textbf{3.028e-09}（最差） & 3.791e-05$\pm$1.320e-05（最差 7.276e-05） \\
+$\|\tilde q\|_\infty$ 峰值 & 0.105677$\pm$0.033202 & 0.365863$\pm$0.064119 \\
+$\|\tilde q\|_\infty$ RMS & 0.025875$\pm$0.008016 & 0.125024$\pm$0.029209 \\
+调节时间（2\% 带） & 0.9796$\pm$0.0357 s & 1.0151$\pm$0.0595 s \\
+$\|u\|_\infty$ & 26.738$\pm$4.333（最差 38.086） & 49.987$\pm$4.644（最差 58.373） \\
+$\min\sigma_{\min}(J_a)$ & 0.47837$\pm$0.01738 & 0.099510$\pm$0.037138 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{关键证据}：误差动态（表~\ref{tab:osfit}，最差 \textbf{0.5563\%} 在 $\tilde x_1$）；
+  双向自洽（\textbf{3.318e-15}）。
+\item \textbf{特有发现}：OS 逆动力学的失效机制与 \texttt{os\_pd} \textbf{完全不同}——
+  它靠「用巨大的关节运动把退化方向的误差做掉」（$\sigma_{\min}=10^{-3}$ 时需
+  $a/\sigma_{\min}=20$ rad 的关节运动），故其失效表现为\textbf{反馈力矩/关节速度爆掉}，
+  而 \texttt{os\_pd} 是\textbf{推不动}（第~\ref{sec:singular}~节）。
+\end{itemize}
+
+\subsection{实验四小结}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+判据 & 1 误差动态 & 2 无源性 & 3a 收敛 & 3b 边界样本 & 4 分工 & 5 耦合抑制 & 6 双向自洽 \\
+\midrule
+结论 & 通过 & 通过 & 通过 & 如实记录 & 通过 & 通过 & 通过 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{实验四说明的是}：四个算法的控制律实现\textbf{精确复现}了书中的解析预测；
+两个重力补偿 PD 的无源性、两个 OS 算法的力矩结构、以及两组定性论断（分工、耦合抑制）
+都得到数值支持。\textbf{但不能说明}：对模型误差的敏感度与失效边界（$\to$ 实验五）。
+
+%=======================================================================
+\section{实验五：鲁棒性与失效边界（阶段 4）}\label{sec:exp5}
+%=======================================================================
+
+\subsection{验证什么与实验设计}
+
+\textbf{验证什么.} RQ3：探明\textbf{失效点}与对模型误差的敏感度，验证书中多处
+「实际使用时……」注记的定性论断。
+\textbf{本实验不要求鲁棒性「很好」，只要求趋势与书中一致，偏差如实记录。}
+
+\textbf{如何验证.} 六个实验块（奇异位形、模型失配、摩擦、测量噪声、控制周期、离散化失稳）
++ 耗时测量，汇总为 3 条判据。
+
+\begin{warnbox}{本实验全部实验块的 plant 与控制器模型都不同源}
+失配/摩擦/噪声只作用于 plant——这正是红线 1 的落地，与实验三/四的标称（同源）用例互补。
+控制器增益仍取实验四的口径，便于与标称结果逐项对照。
+\end{warnbox}
+
+\textbf{结果.} \textbf{3 条判据 3/3 PASS}，完整一键跑 \texttt{run\_stage4.py --workers 6} 用时
+\textbf{3877.1 s（64.6 min）}，归档 \texttt{res/6r\_stage4/result.json}。
+分块耗时：奇异 903 s、摩擦 623 s、失配 350 s、噪声 313 s、周期 134 s、失稳约 8 min。
+
+\subsection{判据 2：奇异位形边界}\label{sec:singular}
+
+\textbf{验证什么.} 书中 OS 控制的稳定性证明依赖「$J_a$ \textbf{列满秩}」。
+本判据要给该前提一个\textbf{定量的边界}：每个 OS 算法的\textbf{首个失效 $\sigma_{\min}$} 是多少、
+失效表现是什么。
+
+\textbf{如何验证.} 以 $\sigma_{\min}(J_a)$ 为奇异度度量，\textbf{只动腕部 \texttt{q5}}
+（该奇异族实测 $\sigma_{\min}\approx0.4446\,|q_5|$ 且单调），用\textbf{二分反解}把 $\sigma_{\min}$
+变成\textbf{可控自变量}，从标称值扫到 $10^{-5}$（10 档，$\operatorname{cond}(J_a)$ 到
+\textbf{1.79e+05}），如表~\ref{tab:singlev} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{奇异位形扫描的 10 档目标与实测（二分反解 \texttt{q5}）}\label{tab:singlev}
+\setlength{\tabcolsep}{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lcccccccccc@{}}
+\toprule
+\makecell{目标\\$\sigma_{\min}$} & \makecell{标称\\0.15329} & 0.05 & 0.02 & 0.01 & 0.005 & 0.002 & 0.001 & 5e-4 & 1e-4 & 1e-5 \\
+\midrule
+实测 $\sigma_{\min}$ & 0.15329 & 0.05000 & 0.02000 & 0.01000 & 0.00500 & 0.00200 & 0.00100 & 5.00e-4 & 1.00e-4 & 1.00e-5 \\
+$q_5$ & $-0.500$ & $-0.11384$ & $-0.04501$ & $-0.02249$ & $-0.011249$ & $-0.004501$ & $-0.002251$ & $-1.125$e-3 & $-2.251$e-4 & $-2.251$e-5 \\
+$\operatorname{cond}(J_a)$ & 12.70 & 34.88 & 88.51 & 178.0 & 357.0 & 894.2 & 1789 & 3580 & 17903 & \textbf{179038} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{三个场景}（同一位形、同幅度 $a=0.02$、初值相同，\textbf{只换方向}）——
+这是本判据的\textbf{核心对照设计}，如表~\ref{tab:scenes} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{奇异判据的三个场景对照设计}\label{tab:scenes}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.7cm} p{4.5cm} p{5.0cm} p{2.9cm}@{}}
+\toprule
+场景 & 指令 & 初值 & 预测所需关节运动 \\
+\midrule
+\texttt{out\_of\_range} & $x_d=\mathrm{fk}(q_t)+a\cdot u_{\min}$（\textbf{退化方向}） & $q_t$ & $a/\sigma_{\min}$：0.130 $\to$ 2.00 $\to$ 2000 rad \\
+\texttt{in\_range} & $x_d=\mathrm{fk}(q_t)+a\cdot u_{\max}$（\textbf{最良态方向}） & $q_t$ & $a/\sigma_{\max}\approx0.0103\to0.0112$ rad（\textbf{与 $\sigma_{\min}$ 无关}） \\
+\texttt{js\_hold} & 关节空间对照（$J_a$ 不进 JS 控制律） & $q_t+DQ_4v$ & --- \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{结果——失效点（判据 2 的核心结论）}如表~\ref{tab:failpoint} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{两个 OS 算法的首个失效 $\sigma_{\min}$ 与失效机理}\label{tab:failpoint}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{1.8cm} p{1.5cm} p{2.7cm} p{5.1cm} p{3.5cm}@{}}
+\toprule
+算法 & \makecell{首个\\失效 $\sigma_{\min}$} & 阈值区间 & 失效原因 & 失效计数（10 档） \\
+\midrule
+\texttt{os\_pd} & \textbf{5.000e-02} & $[0.15329,\ 0.05000]$ & \textbf{误差不衰减}（末值/全程峰值 $=0.24>0.1$） & 9 档失效，\textbf{全部是「不衰减」}；力矩/速度 \textbf{0 次超限} \\
+\texttt{os\_invdyn} & \textbf{1.000e-04} & $[5.000\text{e-}04,\ 1.000\text{e-}04]$ & \textbf{反馈力矩 $\|u-g\|_\infty=282.6$ N$\cdot$m $>200$}、$\|\dot q\|_\infty=36.07$ rad/s & 2 档失效（力矩 2 次、穿越奇异面 1 次） \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{对照证据}（证明「失效来自 $J_a$ 结构，不是位形本身难」）如表~\ref{tab:singctrl} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{奇异判据的对照证据}\label{tab:singctrl}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.5cm} p{6.0cm} p{6.0cm}@{}}
+\toprule
+对照 & 结果 & 说明 \\
+\midrule
+JS 对照组（\texttt{js\_pd}/\texttt{js\_invdyn}） & \textbf{0/6 失效}，$\max\|u-g\|_\infty=5.79/5.77$ N$\cdot$m，最大衰减比 0.0093/0.00079 & 同一位形完全正常 $\Rightarrow$ 失效来自 $J_a$ 结构 \\
+\texttt{os\_pd} 的 \texttt{in\_range}（最良态方向） & \textbf{0/5 失效}（$\sigma_{\min}$ 一路到 $10^{-5}$） & 只用 $J_a^{T}$ 的算法不受 $J_a^{-1}$ 放大影响 \\
+\texttt{os\_invdyn} 的 \texttt{in\_range} & 0/5 失效 & 与旧口径下的「$\sigma\le10^{-3}$ 即失效」矛盾——旧口径的初值扰动会把臂\textbf{推过奇异面}，测的不是位形病态（第~\ref{sec:revisions}~节第 12 条） \\
+场景汇总 & \texttt{in\_range} \textbf{0/10}、\texttt{out\_of\_range} \textbf{11/20}、\texttt{js\_hold} \textbf{0/6} & --- \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{放大量级关系}（log-log 斜率 vs $1/\sigma_{\min}$，10 档）如表~\ref{tab:scaling} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{奇异扫描下的放大量级关系（log-log 斜率）}\label{tab:scaling}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+算法 & $\|u-g\|_\infty$ & $\|\dot q\|_\infty$ & $\|\ddot q\|_\infty$ & 仅未失效点 \\
+\midrule
+\texttt{os\_pd} & \textbf{$-0.0106$} & $-0.0487$ & 0.0058 & --- \\
+\texttt{os\_invdyn} & \textbf{7.795} & 7.704 & 8.164 & \textbf{0.787}（接近理论 1） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{warnbox}{负结果（必须如实报告）}
+\texttt{os\_pd} 的「$1/\sigma_{\min}$ 放大律」斜率只测到 \textbf{$-0.011$}（理论 1）——
+\textbf{这不是判据失效}：它只用 $J_a^{T}$，反馈力矩 $J_a^{T}K_P\tilde x$ \textbf{有界}
+（$3.5\times10^{-1}$ N$\cdot$m 量级），失效模式本就是「退化方向\textbf{推不动}、误差不衰减」，
+\textbf{并不表现为「量级放大」}，故该斜率对它无意义。
+对比 \texttt{os\_invdyn} 全段斜率 7.795 是\textbf{含失效点}的（失效后指数发散会拉动斜率），
+仅取未失效点则为 0.787，接近理论 1。
+\end{warnbox}
+
+\begin{warnbox}{步长归因的一个反直觉定点}
+在 \texttt{os\_pd}、$\sigma_{\min}=5.000\times10^{-4}$（失效边界附近）上，$\|u-g\|_\infty$ 随 $dt$
+减半反而 \textbf{102.93 $\to$ 135.86}（比值 \textbf{0.758}，与「$dt$ 减半应下降」相反）。
+判据 3 的\textbf{线性冻结模型对照}表明这属\textbf{积分器/采样效应}而非控制律问题
+（第~\ref{sec:instab}~节），但本报告不把它解释成「正常」——它落在失效边界附近，
+属\textbf{未定论}，如实记录。
+\end{warnbox}
+
+\begin{warnbox}{DLS（阻尼最小二乘）对照}
+以 \texttt{os\_invdyn} 为例、阻尼 $\lambda=0.02$，在 $\sigma_{\min}$ 从 2e-3 到 1e-5 上把
+$J_a^{-1}$ 换成阻尼伪逆，衰减比（末值/全程峰值）为 0.463/0.589/0.693/0.894/$\cdots$。
+\textbf{这属「超出书本范围的建议」，不是书中结论}：书中 OS 逆动力学算法框写的是 $J_a^{-1}$，
+且稳定性证明已声明「$J_a$ 列满秩」前提。DLS 只作\textbf{对照}，用于说明失效的机理，
+\textbf{不得写成书中做法}；而且实测它\textbf{并未真正救回}该用例（衰减比仍在上升，
+因为退化为「推不动的方向」而非数值发散）。
+\end{warnbox}
+
+\textbf{结论.} 判据 2 通过。该判据的两个关键观测量分别如图~\ref{fig:singerr} 与图~\ref{fig:singU} 所示。
+图~\ref{fig:singerr} 的横轴为 $\sigma_{\min}(J_a)$（对数），纵轴为误差的衰减比（末值/全程峰值）：
+\texttt{os\_pd} 在 $\sigma_{\min}\le5\times10^{-2}$ 起误差不再衰减（「推不动」），
+\texttt{os\_invdyn} 更靠后（$10^{-4}$）但失效更剧烈。
+图~\ref{fig:singU} 给出同一扫描下的\textbf{反馈力矩}（已扣除 $g$）：
+\texttt{os\_invdyn} 随 $1/\sigma_{\min}$ 指数放大（282.6 N$\cdot$m 超 200 限），
+而 \texttt{os\_pd} 始终有界（$3.5\times10^{-1}$ N$\cdot$m 量级）。
+把两图并读可得本判据最重要的结论：\textbf{两个 OS 算法虽然都属于「$J_a$ 病态时失效」，
+但失效机理完全不同}——一个是推不动，一个是力矩爆。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{singular_err_6r.png}
+\caption{奇异扫描误差}\label{fig:singerr}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{singular_u_6r.png}
+\caption{奇异扫描力矩}\label{fig:singU}
+\end{figure}
+
+\subsection{判据 1（a）：模型失配（质量 / 惯量两族分治）}\label{sec:mismatch}
+
+\textbf{验证什么.} 控制器使用\textbf{标称模型}、plant 使用失配模型时，误差随失配量的
+\textbf{量级关系}是否与解析预测一致。质量族与惯量族分开，因为它们的解析后果不同：
+\textbf{改质量会改 $g$ $\Rightarrow$ 有稳态偏移}；\textbf{只改惯量不改 $g$ $\Rightarrow$ 无稳态偏移、
+只改暂态}。
+
+\textbf{如何验证.} plant 缩放（\texttt{mass\_scale}/\texttt{inertia\_scale}），
+\textbf{控制器恒用标称模型}；初值取目标位形（误差全由失配激发）；对 $|s|-1$ 做 log-log 斜率拟合，
+并与闭式预测 $\tilde q_{ss}=K_{P,\mathrm{eff}}^{-1}\Delta g$ 比较。
+
+\textbf{结果——质量族}（$s=0.7/0.9/1.1/1.3$）如表~\ref{tab:mass} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{质量失配下的误差量级关系（$s$ 为 plant 质量缩放）}\label{tab:mass}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{1.9cm} p{1.5cm} p{9.0cm} p{2.2cm}@{}}
+\toprule
+算法 & log-log 斜率（理论 1） & 各档末值误差 & 实测/闭式预测 \\
+\midrule
+\texttt{js\_pd} & \textbf{0.9983} & 0.11408 / 0.036862 / 0.035653 / 0.10330 & 0.904--0.999 \\
+\texttt{js\_invdyn} & \textbf{1.0663} & 0.11356 / 0.036807 / 0.035704 / 0.12048 & 0.938--1.055 \\
+\texttt{os\_pd} & \textbf{0.9808} & 0.10608 / 0.040054 / 0.043944 / 0.14318 & 0.836--1.128 \\
+\texttt{os\_invdyn} & \textbf{0.9343} & 0.25794 / 0.12603 / 0.17141 / 0.65237 & \textbf{0.508--1.285} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item 四个算法斜率都在 $(0.3,1.7)$ 内（理论 1），通过；实测/闭式预测 \textbf{0.508--1.285}
+  （阈值 $(0.3,3.0)$），通过；
+\item \textbf{\texttt{os\_invdyn} 偏差最大}（预测比最低到 0.508、最高 1.285），原因已定位：
+  它的任务空间增益最软（$K_P=\omega_n^2I$，而 \texttt{os\_pd} 用任务惯量标定），
+  $\pm30\%$ 失配下加权误差已达 0.26--0.65 $\Rightarrow$ \textbf{脱离一阶线性区}，
+  线性预测本身失效。\textbf{如实记录。}
+\end{itemize}
+
+\textbf{结果——惯量族}（不改 $g$ $\Rightarrow$ 无稳态偏移）如表~\ref{tab:inertia} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{惯量失配下的衰减率与长时段末值}\label{tab:inertia}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.4cm} p{6.6cm} p{6.5cm}@{}}
+\toprule
+算法 & 衰减率比（实测）/ $\sqrt{\lambda_{\min}(M)}$ & 长时段（$T{=}2.0$ s）末值 \\
+\midrule
+\texttt{js\_pd} & 0.844 / 1.000 / 1.107（$s=0.7/1.0/1.3$） & --- \\
+\texttt{js\_invdyn} & --- & $s=0.7$：\textbf{1.434e-06}（衰减 5.463/s）；$s=1.3$：\textbf{2.515e-07}（5.901/s） \\
+\texttt{os\_invdyn} & --- & $s=0.7$：\textbf{1.126e-04}（衰减 4.392/s）；$s=1.3$：\textbf{2.635e-05}（5.510/s） \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item 判据：实测/预测的衰减率比 $\in(0.5,2.0)$，通过（实测 0.81--1.14）；长时段末值 $<10^{-2}$ rad
+  \textbf{且仍在衰减}，通过 $\Rightarrow$ \textbf{无稳态偏移}，与「惯量失配不改 $g$
+  $\Rightarrow$ 平衡点仍为 $q_d$」的理论预测一致。
+\end{itemize}
+
+\textbf{结论.} 判据 1a 通过。两族失配的结果分别如图~\ref{fig:mmass} 与图~\ref{fig:minertia} 所示。
+图~\ref{fig:mmass} 给出质量族：误差随 $|s-1|$ 的 log-log 斜率在 0.93--1.07（理论 1），
+且因为质量族会改变 $g$，曲线上存在可被闭式预测量化的\textbf{稳态偏移}——
+这正是质量族与惯量族必须分治的原因。
+图~\ref{fig:minertia} 给出惯量族：只改惯量不改 $g$，因此\textbf{无稳态偏移}，
+长时段末值仍在衰减（$1.4\times10^{-6}\sim1.1\times10^{-4}$ rad），
+与理论预测一致。两图对照即可看出「有偏 vs 无偏」这一解析差别在数值上被清晰复现。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{mismatch_mass_6r.png}
+\caption{质量失配误差}\label{fig:mmass}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{mismatch_inertia_6r.png}
+\caption{惯量失配衰减率}\label{fig:minertia}
+\end{figure}
+
+\subsection{判据 1（b）：摩擦未补偿}\label{sec:friction}
+
+\textbf{验证什么.} 书中动力学方程含摩擦项且要求补偿；未补偿时误差随摩擦量 $F_c$ 的\textbf{趋势}如何。
+本实验块\textbf{不判定斜率}（原因见下），只判定三条趋势与\textbf{数值分辨率}。
+
+\textbf{如何验证.} plant 加粘性 + 库仑摩擦（控制器 $F_f=0$），摩擦实现为
+$\tau_f=-F_c\tanh(\dot q/\varepsilon)$，其线性区刚度是 $F_c/\varepsilon$。
+\textbf{先验证分辨率}——即积分器能否分辨 $\tanh$ 的过渡层：经 $B^{-1}$ 后最硬模态速率
+$(F_c^{\max}/\varepsilon)/\lambda_{\min}(B)$ 必须落在 RK4 稳定域内。
+
+\textbf{结果——数值分辨率}（判定能否测到摩擦物理的前提）如表~\ref{tab:res} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{摩擦实验的数值分辨率判定}\label{tab:res}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{5.4cm} p{4.0cm} p{5.0cm}@{}}
+\toprule
+口径 & 硬性数 $dt\cdot(F_c/\varepsilon)/\lambda_{\min}(B)$ & 判定 \\
+\midrule
+现口径：$\varepsilon=0.2$ rad/s、$dt=5\times10^{-4}$ s & \textbf{2.1655} & 通过（$\le2.785$，分辨） \\
+旧口径：$\varepsilon=10^{-3}$、$dt=2\times10^{-3}$ & 1732（超限 620$\times$） & 不通过：积分器分辨不了过渡层，测到的是\textbf{数值伪爬行} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{结果——残留误差随 $F_c$}（$\|u\|_\infty$ 口径的稳态残留，$F_c=0/0.5/1.0$ N$\cdot$m）
+如表~\ref{tab:friction} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{未补偿摩擦下的残留误差与守卫（$F_c=0/0.5/1.0$ N$\cdot$m）}\label{tab:friction}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}l c c c c c@{}}
+\toprule
+算法 & 残留（0/0.5/1.0） & 单调不减 & $F_c>0$ 档 / 真零摩擦基线 & 守卫（衰减到 $\le25\%$） & log-log 斜率 \\
+\midrule
+\texttt{js\_pd} & 2.896e-02 / 4.560e-02 / 4.720e-02 & 是 & \textbf{8.59$\times$} & 0.0452 通过 & 0.0497 \\
+\texttt{js\_invdyn} & 2.894e-02 / 4.573e-02 / 4.729e-02 & 是 & \textbf{8.12$\times$} & 0.0477 通过 & 0.0484 \\
+\texttt{os\_pd} & 5.722e-02 / 1.754e-01 / 2.021e-01 & 是 & \textbf{20.61$\times$} & 0.0042 通过 & 0.2051 \\
+\texttt{os\_invdyn} & 1.532e-01 / 2.508e-01 / 2.725e-01 & 是 & \textbf{2.79$\times$} & 0.1257 通过 & 0.1197 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item 判据（\textbf{趋势型}）通过：\stage{1} 残留随 $F_c$ 单调不减；\stage{2} 每档 $\ge2\times$
+  零摩擦基线；\stage{3} 真零摩擦基线衰减到 $\le25\%$ \textbf{全程}峰值（哨兵，专抓「控制器读到冻结状态」
+  那类 bug）；\stage{4} 分辨率成立。
+\item \textbf{静平衡上界预测}：按各算法\textbf{自己的静平衡式}（$F_f=0$ 时
+  $\tilde q=K_{P,\mathrm{eff}}^{-1}\tau_f$）给出上界，实测/上界仅 \textbf{0.0033--0.0296}
+  $\Rightarrow$ \textbf{预测极保守}（关节可能停在死区内的任意位置），已\textbf{明确标注为上界}。
+\end{itemize}
+
+\begin{warnbox}{负结果（见第~\ref{sec:negative}~节第 4 条）}
+跨 $F_c$ 的 log-log 斜率只有 \textbf{0.05--0.21}。
+这\textbf{不是}「库仑死区律被证伪」，而是本用例的残留被「控制权限小于 $F_c$、
+根本挣不开静摩擦的腕部关节」垫底（残留 $\approx$ 初始扰动 0.05 rad）所致；
+且 $\tanh$ 光滑化模型\textbf{没有集值静摩擦}，\textbf{本就不存在教科书意义的静态死区}。
+\end{warnbox}
+
+\begin{warnbox}{本实验块只能在完整时长上判定}
+\texttt{--quick} 把 $T$ 压到 0.3 s 时守卫必然报异常、分离比降到 1.4$\times$
+（\textbf{压缩时长的伪影}，不是物理结论）。
+\end{warnbox}
+
+\textbf{结论.} 判据 1b 通过。摩擦的三种形态对照与 $F_c$ 扫描分别如图~\ref{fig:fricshape} 与
+图~\ref{fig:friccoul} 所示。图~\ref{fig:fricshape} 给出纯粘性、纯库仑、二者兼有三种形态：
+三种形态都能被控制器「感到」，但残留量级主要由「挣不开静摩擦的腕部关节」决定——
+这解释了为什么下面那张扫描图的斜率会这么平。
+图~\ref{fig:friccoul} 是 $F_c$ 扫描：残留随 $F_c$ 单调不减、且显著高于真零摩擦基线（8.1--20.6$\times$），
+这部分趋势与书中论断一致，构成本判据的通过依据；但跨 $F_c$ 的 log-log 斜率只有 0.05--0.21，
+\textbf{本报告把它作为负结果如实列出}（机理见上文与第~\ref{sec:negative}~节），
+不修改判据去迁就它。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{friction_shapes_6r.png}
+\caption{摩擦三形态对比}\label{fig:fricshape}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{friction_coulomb_6r.png}
+\caption{库仑摩擦扫描}\label{fig:friccoul}
+\end{figure}
+
+\subsection{判据 1（c）：测量噪声（微分项最敏感）}\label{sec:noise}
+
+\textbf{验证什么.} 书中指出状态来自传感器/滤波器，而 PD 控制的\textbf{微分项对速度噪声最敏感}。
+本判据验证：噪声到力矩的\textbf{一阶敏感度预测}是否与实测一致，
+以及「速度由位置后向差分」这一常见做法的代价。
+
+\textbf{如何验证.} $q$/$\dot q$ 加高斯噪声（$\sigma_q=10^{-4}$ rad、$\sigma_{\dot q}=10^{-3}$ rad/s），
+含「\textbf{速度由位置后向差分}」（把位置噪声放大 $\sqrt2/h_c$ 倍后进 $K_D$ 项）与一阶低通
+（$\tau=5$ ms）；初值取\textbf{平衡点}（纯噪声激发）。测量\textbf{力矩抖动 AC-RMS}（N$\cdot$m）。
+
+\textbf{结果}如表~\ref{tab:noise} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{测量噪声下的力矩抖动 AC-RMS（N$\cdot$m，6R）}\label{tab:noise}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.4cm} c c c c@{}}
+\toprule
+路径 & \texttt{js\_pd} & \texttt{js\_invdyn} & \texttt{os\_pd} & \texttt{os\_invdyn} \\
+\midrule
+\texttt{clean}（标称） & 2.06e-13 & 2.06e-13 & 2.06e-13 & 2.06e-13 \\
+\texttt{q\_only} & 9.460e-03 & 9.460e-03 & 2.285e-02 & 5.312e-03 \\
+\textbf{直接测速} \texttt{qd\_only} & \textbf{2.862e-02} & 2.862e-02 & 4.306e-02 & 2.143e-02 \\
+\texttt{q\_and\_qd} & 3.138e-02 & 3.138e-02 & 5.213e-02 & 2.256e-02 \\
+\textbf{位置差分} \texttt{q\_diff} & \textbf{4.065} & \textbf{4.066} & \textbf{6.117} & \textbf{3.044} \\
+差分 + 低通 & 0.4977 & 0.4977 & 0.7488 & 0.3727 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item 判据三条件全部成立，通过：\stage{1} 一阶敏感度\textbf{预测/实测}比值 \textbf{0.95--1.02}；
+  \stage{2} \texttt{q\_diff} 比直接测速\textbf{劣 142$\times$}；\stage{3} 低通把它降 \textbf{8.2$\times$}。
+\item 一阶敏感度矩阵（$S_q=\partial u/\partial q$、$S_{\dot q}=\partial u/\partial\dot q$，
+  在 $q_d$、$\dot q=0$ 处）：\texttt{js\_pd} $\max|S_q|=94.13$、\texttt{os\_pd} \textbf{238.00}、
+  \texttt{os\_invdyn} 52.95 $\Rightarrow$ 「微分项最敏感」在数值上被钉住。
+\end{itemize}
+
+\textbf{结论.} 判据 1c 通过。该结果如图~\ref{fig:noise} 所示：图中六条路径自上而下排列，
+可以直观看到「位置差分测速」把力矩抖动放大到 3.0--6.1 N$\cdot$m（比直接测速劣 142$\times$），
+而加一阶低通后降 8.2$\times$。这张图的实用含义是：
+\textbf{速度信号优先用传感器直接测量，而不是位置后向差分}——
+但这一条属\textbf{工程建议}（书中只说「状态来自传感器/滤波器」），
+不能写成书中结论（见第~\ref{sec:beyond}~节）。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{noise_6r.png}
+\caption{噪声力矩抖动}\label{fig:noise}
+\end{figure}
+
+\subsection{判据 1（d）：控制周期敏感性（必须用跟踪用例）}\label{sec:period}
+
+\textbf{验证什么.} 实际数字控制器以周期 $h_c$ 零阶保持输出，$h_c$ 对跟踪误差的影响是否为一阶 $O(h_c)$。
+
+\textbf{如何验证.} $h_c\in\{0.5,1,5\}$ ms（零阶保持，仿真 $dt=0.5$ ms），
+测\textbf{运动过程}峰值误差。
+\textbf{用例必须选跟踪}：调节用例的稳态 ZOH 残差恒为 0，用它测控制周期等于测噪声地板。
+
+\textbf{结果}如表~\ref{tab:period} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{控制周期对跟踪峰值误差的影响（6R）}\label{tab:period}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{1.9cm} p{4.2cm} p{3.4cm} p{3.4cm}@{}}
+\toprule
+算法 & 峰值误差 0.5 ms $\to$ 1 ms $\to$ 5 ms & log-log 斜率（理论 1） & 5 ms/0.5 ms 比值 \\
+\midrule
+\texttt{js\_invdyn} & 7.303e-04 $\to$ 1.461e-03 $\to$ \textbf{7.318e-03} & \textbf{1.0010} 通过 & \textbf{10.02$\times$} \\
+\texttt{os\_invdyn} & 2.916e-03 $\to$ 5.820e-03 $\to$ \textbf{2.860e-02} & \textbf{0.9911} 通过 & \textbf{9.81$\times$} \\
+\texttt{js\_pd} & 2.815e-01 $\to$ 2.816e-01 $\to$ 2.822e-01 & 0.0010 & 1.002$\times$ \\
+\texttt{os\_pd} & 1.231 $\to$ 1.232 $\to$ 1.234 & 0.0008 & 1.002$\times$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item 判据：两个逆动力学算法的斜率 $\in(0.6,1.4)$，通过；四者峰值误差单调不减。
+\item \textbf{如实报告}：两个重力补偿 PD 的跟踪误差\textbf{几乎与 $h_c$ 无关}（斜率 0.001）——
+  它们的误差被\textbf{未补偿的 $B,C$ 项}（$\propto$ 轨迹加速度）主导，$h_c$ 只是次要修正。
+  这本身就是书中「快速跟踪需要补 $B,C$」的又一侧面证据。判据只对逆动力学类要求 $O(h_c)$。
+\end{itemize}
+
+\textbf{结论.} 判据 1d 通过。该结果如图~\ref{fig:period} 所示：两个逆动力学算法的峰值误差随 $h_c$
+一阶增长（斜率 1.0010/0.9911），而两个重力补偿 PD 几乎是一条水平线（斜率 0.001）——
+后者不是因为「对采样不敏感」，而是因为它们的误差水平本来就高出一个量级、
+被未补偿的 $B,C$ 项主导，$h_c$ 的变化被淹没了。这一形态正好与上一节「快速跟踪需要补 $B,C$」
+的论断互相印证。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{period_6r.png}
+\caption{控制周期影响}\label{fig:period}
+\end{figure}
+
+\subsection{判据 3：离散化失稳与「连续律正确性」的区分}\label{sec:instab}
+
+\textbf{验证什么.} 高增益下仿真发散，究竟是\textbf{控制律错误}还是\textbf{离散化失稳}
+（积分器/采样属性）？二者必须严格分开，否则会把「仿真器的局限」误判为「算法的缺陷」。
+
+\textbf{如何验证.} 仿真层里 $u$ 在一步内是常量（ZOH），离散映射是 $y_{k+1}=(\Phi-\Gamma K)y_k$，
+\textbf{不是} $R(h(A-BK))$。两者只差 $O(h^2)$，但稳定界差得不小，如表~\ref{tab:zoh} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{两种理论参照下的稳定界 $h\omega^*$}\label{tab:zoh}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{12.0cm} c@{}}
+\toprule
+参照 & $h\omega^*$ \\
+\midrule
+RK4 对单位质量二阶系统的\textbf{连续反馈}理论值 & 2.7853 \\
+\textbf{本仿真层的零阶保持采样闭环}（与仿真层同口径） & \textbf{2.1555} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+做法：对数二分求失稳阈值 $\omega^*(dt)$，$dt\in\{2,0.5\}$ ms。
+\textbf{失稳定义与「控制量大」严格分开}：失稳 = NaN/异常 \textbf{或}误差的\textbf{指数增长率
+$>25$/s} \textbf{或} $\|\dot q\|_\infty>10^{6}$ rad/s。后一条是为 OS 类补的——
+它的观测量是\textbf{任务空间加权误差}、有上界，失稳时只涨到 $\sim26$ 倍就\textbf{饱和}，
+只看误差会\textbf{漏判}。
+
+\textbf{结果}如表~\ref{tab:instab} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{离散化失稳阈值实测（对数二分）}\label{tab:instab}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{4.6cm} p{10.9cm}@{}}
+\toprule
+量 & 实测 \\
+\midrule
+$\omega^*(2\ \mathrm{ms})$ & \textbf{666.76} \\
+$\omega^*(0.5\ \mathrm{ms})$ & \textbf{2108.48} \\
+比值 & 0.3162（若 $h\omega^*$ 恒定，预期 4.00；实测 3.16 $\Rightarrow$ \textbf{阈值随 $dt$ 变小而变宽}，符合稳定域规律） \\
+$h\omega^*$（2 ms / 0.5 ms） & \textbf{1.3335 / 1.0542} \\
+\textbf{两档相对差} & \textbf{20.94\% $<$ 50\%} 通过 \\
+阈值 bracket（2 ms / 0.5 ms） & $[500.0,\ 889.14]$ / $[1581.14,\ 2811.71]$ \\
+$h\omega^*$ / ZOH 参照 2.1555 & \textbf{0.554} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{四个算法的阈值完全相同}（同一 bracket）——这本身就是
+\textbf{「该阈值是积分器/采样属性、不是控制律属性」}的证据。
+
+\textbf{线性冻结模型对照}（把 $B,C,g,J_a$ 冻结在 $q_d$ 重做同一套二分）：
+四算法在 $dt=2$ ms 上均为 \texttt{largest\_stable\_wn = null}、\texttt{smallest\_unstable\_wn = 625}
+（对应增长率 254.53/s），只能给出\textbf{单侧界}（$h\omega^*$ 落在 $[1.25,\cdot)$ 内）。
+$\Rightarrow$ 其阈值与真实非线性 plant \textbf{一致} $\Rightarrow$ 失稳与非线性项、与控制律\textbf{都无关}。
+
+\begin{warnbox}{必须如实报告的三处}
+\stage{1} 实测 $h\omega^*\approx1.05$--$1.33$ 只有 \textbf{ZOH 参照 2.156 的 0.49--0.62 倍}——
+即本仿真层比理论 ZOH 采样闭环\textbf{更早失稳}；机理对照指向「非线性/耦合项使有效阈值下移」，
+但本批次\textbf{未做到定量归因}（对照只取到 $dt=2$ ms 一档，只能给单侧界）。
+\stage{2} 机理对照的\textbf{两档对照缺失}（见第~\ref{sec:negative}~节第 8 条）。
+\stage{3} 判据 3 的 PASS 条件是「$\ge2$ 个算法给出阈值 + 两档相对差 $<50\%$」，
+\textbf{不依赖}上面两点。
+\end{warnbox}
+
+\textbf{结论.} 判据 3 通过。该结果如图~\ref{fig:instab} 所示：四个算法的失稳阈值落在同一 bracket 内，
+阈值只随步长变化（$h\omega^*$ 两档相对差 20.9\%），说明它是积分器/采样属性而非控制律属性。
+图中两档 $dt$ 的阈值柱并排显示，可以看到 $\omega^*$ 的绝对值随 $dt$ 减半明显变宽，
+而乘积 $h\omega^*$ 基本保持——这正是「离散化失稳」的判别特征。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{instability_6r.png}
+\caption{离散化失稳阈值}\label{fig:instab}
+\end{figure}
+
+\subsection{附加测量：计算耗时}
+
+\textbf{验证什么.} 书中提到「实时计算动力学曾是工程难点」。本项测量\textbf{每次调用都取不同状态}
+（避免 \texttt{RobotCase.dyn} 的单条 memo 命中，故是\textbf{真实计算成本}；\texttt{n\_rep}=200）。
+
+\textbf{结果}如表~\ref{tab:cost} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\caption{单周期计算耗时实测（Python 原型，ms）}\label{tab:cost}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{12.0cm} c@{}}
+\toprule
+项 & 实测（ms） \\
+\midrule
+控制器单周期：\texttt{js\_pd} / \texttt{js\_invdyn} / \texttt{os\_pd} / \texttt{os\_invdyn} & 11.598 / 12.128 / 11.969 / \textbf{15.724} \\
+被控对象一步（RK4 四级 $\times$ \texttt{robot\_dyn}） & \textbf{47.054} \\
+一次 \texttt{fk + jac} & 0.542 \\
+控制器 + 被控对象一步（合计） & 58.653 / 59.182 / 59.023 / 62.779 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+$\Rightarrow$ 与 $h_c=1$ ms 相比，\textbf{本实现完全达不到实时}（慢约 60$\times$）。
+
+\begin{warnbox}{这是 Python + NumPy 实现，不是 C 代码}
+该数字\textbf{不能}用来论证「书中算法不实用」，只能说明「原型实现的算力开销」。
+顺带：\texttt{np.cross} 占 profile 的 \textbf{51\%}（手写三元叉乘可省 1.4--1.5$\times$），
+但改它要动 Part II 已 $\dag$ 的原件，\textbf{未获授权，本批次未做}
+（第~\ref{sec:notdone}~节）。
+\end{warnbox}
+
+\subsection{实验五小结}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+判据 & 2 奇异边界 & 1 四项量级关系 & 3 离散化失稳 vs 连续律 \\
+\midrule
+结论 & 通过 & 通过（失配/摩擦/噪声/周期四项全 PASS） & 通过 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{实验五说明的是}：四个算法在扰动下的行为趋势与书中论断一致；
+两个 OS 算法的失效边界被定量给出，且失效机理各不相同（推不动 vs 力矩爆）。
+\textbf{但它也给出了本报告最主要的负结果}（摩擦斜率、\texttt{os\_pd} 放大律、失稳阈值偏低），
+见第~\ref{sec:negative}~节。
+
+%=======================================================================
+\section{综合讨论}\label{sec:discuss}
+%=======================================================================
+
+\subsection{证据链如何支撑「已验证」判定}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.4cm} p{2.6cm} p{10.4cm}@{}}
+\toprule
+判定要素 & 支撑实验 & 关键实测 \\
+\midrule
+模型（运动学/雅可比/动力学）正确 & 实验一 + 实验二 & 内部自洽 7/7；外部对拍 $\sim10^{-15}$（$C\dot q$ $10^{-9}$ 为差分下限）；失配自检可靠检出 \\
+控制律实现与书中公式一致 & 实验三 + 实验四判据 1 & 误差动态与设定 $(\xi,\omega_n)$ 最差 1.2764\% \\
+实现精度足够（不是靠大误差掩盖） & 实验四判据 3a & 20 组初值最差末值 1.068e-06 rad \\
+正性能（无源性 / 映射正确 / 分工 / 耦合抑制） & 实验四判据 2、4、5、6 & 正功占比 8.15e-10；映射 3.59e-16；130.0$\times$/136.3$\times$；63.1$\times$ \\
+边界明确（何时失效、为何失效） & 实验五判据 2 & \texttt{os\_pd} 5.0e-2（推不动）、\texttt{os\_invdyn} 1.0e-4（力矩爆）；JS 对照 0/6 \\
+对扰动的敏感度已知 & 实验五判据 1 & 四项趋势全 PASS；质量斜率 0.93--1.07 \\
+数值失稳 vs 控制律错误可区分 & 实验五判据 3 & 四算法同阈值、$h\omega^*$ 两档相对差 20.9\% \\
+可复现 & 附录~\ref{app:commands}--\ref{app:env} & 固定种子、20 组初值、均值 $\pm$ 标准差、逐字段归档索引 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{负结果 / 未达标项（照实写）}\label{sec:negative}
+
+\begin{enumerate}[leftmargin=2em,itemsep=4pt]
+\item \textbf{奇异边界与其失效点}（第~\ref{sec:singular}~节）：\texttt{os\_pd} 首个失效
+  $\sigma_{\min}=5.0\times10^{-2}$、\texttt{os\_invdyn} 为 $1.0\times10^{-4}$。
+  两者都\textbf{在书中已声明的前提之外}，\textbf{不是书的错误}。
+\item \textbf{\texttt{os\_pd} 的「$1/\sigma_{\min}$ 放大律」斜率只测到 $-0.011$}（理论 1）：
+  不是判据失效，而是它的失效模式本就是「退化方向推不动、误差不衰减」，反馈力矩始终有界。
+\item \textbf{步长归因的反直觉定点}（第~\ref{sec:singular}~节）：\texttt{os\_pd}、
+  $\sigma_{\min}=5\times10^{-4}$ 上 $\|u-g\|_\infty$ 随 $dt$ 减半反而
+  \textbf{102.93 $\to$ 135.86}（比值 0.758）。该点落在失效边界附近，\textbf{归因未定论}
+  （机理对照指向积分器/采样效应）。
+\item \textbf{摩擦未补偿的 log-log 斜率只有 0.05--0.21}（第~\ref{sec:friction}~节）：
+  不是「库仑死区律被证伪」——残留被「挣不开静摩擦的腕部关节」垫底（残留 $\approx$ 初始扰动
+  0.05 rad），且 $\tanh$ 光滑化模型\textbf{没有集值静摩擦}，\textbf{不存在教科书意义的静态死区}。
+  判据因此改为\textbf{趋势型}（单调 + 显著高于零摩擦基线 + 分辨率成立），斜率只报告不判定。
+\item \textbf{\texttt{os\_invdyn} 的 $\pm30\%$ 质量失配偏离一阶线性区}（第~\ref{sec:mismatch}~节）：
+  实测/闭式预测最低到 \textbf{0.508}——其任务空间增益最软，误差已达 0.26--0.65，
+  线性预测本身失效。\textbf{如实记录，不修改预测口径去凑。}
+\item \textbf{摩擦静平衡预测极保守}（第~\ref{sec:friction}~节）：实测/上界仅 0.0033--0.0296
+  （关节可能停在死区内的任意位置），已\textbf{明确标注为上界}。
+\item \textbf{判据 1 的达标与步长强相关}（第~\ref{sec:dtprobe}~节）：判定值 1.2764\% 离 2\% 阈值
+  只有 \textbf{1.6 倍余量}，且是\textbf{系统性}的 $O(dt)$ 偏差。归档同时给出 $dt=2$ ms
+  （2.749\%，\textbf{超阈值}）与 $dt=0.5$ ms（0.605\%）两点。
+\item \textbf{失稳阈值低于理论 ZOH 参照}（第~\ref{sec:instab}~节）：$h\omega^*\approx1.05$--$1.33$
+  vs ZOH 参照 2.156（0.49--0.62 倍），\textbf{机理未定量归因}；机理对照只取到 $dt=2$ ms 一档，
+  只能给单侧界。
+\item \textbf{$\dot x_e\approx J_a\dot q$ 的一阶近似偏差}（判据 6 的关键证据 3）：$\delta$ 从 1e-3
+  拉到 0.891 rad 时，相对偏差 4.75e-04 $\to$ \textbf{0.2772}、绝对偏差斜率 \textbf{1.9465}
+  （$\propto\delta^2$）；且 $\|x_{\mathrm{rot}}\|$（欧拉角差）与真实姿态角之比为
+  \textbf{1.019--1.042}（非 1）$\Rightarrow$ 任务空间误差范数口径\textbf{必须显式声明}
+  （本报告用 $\ell=0.5$ m）。
+\item \textbf{$C$ 的中心差分近似}（第~\ref{sec:c1sync}~节后）：默认 $h=10^{-6}$ 处相对误差
+  1.47e-10（最优 $h\approx10^{-5}$，7.5e-11）。\textbf{结论：不必升级}——标称用例下控制器与
+  被控对象同源，$C,g$ 在采样点精确抵消，其精度\textbf{不进入闭环}；这条「风险」已关闭，
+  但\textbf{在非同源用例（实验五）中 $C$ 的近似误差并未单独隔离}，它与失配/摩擦/噪声效应混在一起，
+  本批次\textbf{未做}独立的 $C$ 误差敏感度实验。
+\item \textbf{积分器 bug 的历史影响}（第~\ref{sec:integrator}、\ref{sec:revisions}~节）：
+  \texttt{rk4\_step} 的 $q$ 更新曾只有一阶精度，使\textbf{实验三/四/五的早期数字全部作废}
+  （旧归档留档为 \texttt{res/*/pre\_rk4fix\_*}，\textbf{勿删}）。修正后已整体重跑，
+  当前归档全部出自修正版。
+\item \textbf{$K_P$ 增益扫描中一处未定位的异常}（第~\ref{sec:exp4}~节辅助实验）：
+  \texttt{os\_invdyn} 在 $\omega_n=8$（$K_P=64$）档出现 $\|u\|_\infty=6.09\times10^{39}$，
+  而同档误差有限（末态 5.1226、单调）。归档未保留逐点轨迹，\textbf{成因未定位}；
+  报告只把它用于斜率拟合，不据此下稳定性结论。
+\end{enumerate}
+
+\subsection{未做的测试及原因}\label{sec:notdone}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.2cm} p{13.3cm}@{}}
+\toprule
+未做项 & 原因 \\
+\midrule
+接触/力控（阻抗、导纳、零力、力位混合） & \textbf{不在本批次范围}——需要外力注入与接触模型；且 MuJoCo 的罚函数软接触与书中「刚性约束 + 弹性接触」不是同一物理，直接对拍会产生系统性偏差 \\
+独立关节 PID/ADRC（\texttt{chap4\_2}） & 不在本批次范围（同属后续批次） \\
+7-DOF 冗余臂的边界行为 & 书中注明「机械臂非冗余」，属边界补充、非必需 \\
+\texttt{np.cross} 手写三元叉乘优化（预估 1.4--1.5$\times$） & \textbf{未获授权}——它要改 Part II 已 $\dag$ 的原件（\texttt{Codes/chap2\_3\_diffk/code\_jacobian.py}）。该项只作为\textbf{超出书本范围的优化建议}列出 \\
+$C$ 差分误差的\textbf{单独}敏感度实验 & 标称用例下 $C$ 不进入闭环（已证）；非同源用例中它与失配效应耦合，本批次未隔离 \\
+真正的实时性评估（C/C++ 实现、代码生成） & 本批次只给 \textbf{Python 原型}的耗时，不能用于论证工程实用性 \\
+6R 的官方 Puma 惯量参数 & 连杆惯性是\textbf{按尺寸估的简化值}（\texttt{code\_models.py} 已声明），非官方参数 \\
+全部 $\ge20$ 组初值的\textbf{独立重复种子}（多种子统计） & 本批次按固定种子 0 的 20 组初值报告均值 $\pm$ 标准差；\textbf{未做跨种子重复}（种子依赖未被评估） \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{执行期判据口径修订与实现问题（阈值一字未动）}\label{sec:revisions}
+
+本节是方法学上的重要部分：它记录「验证过程自身」的问题，与「书的缺陷」严格区分
+（第~\ref{sec:premises}~节）。共 20 条，按性质分为判据设计、真 bug、口径错、工程问题与元数据错五类。
+
+\begin{table}[H]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}c p{5.2cm} p{1.9cm} p{6.2cm}@{}}
+\toprule
+\# & 问题 & 性质 & 处置 \\
+\midrule
+1 & \textbf{判据 5（静平衡）原文恒为假} & 判据不可满足 & 标称位形是\textbf{不稳定}重力平衡（$\lambda_{\min}=-16.13$（2R）/$-44.58$（6R）），机器 eps 按 $e^{\sqrt{|\lambda|}t}$ 放大（6R 10 s 后 $\max\|\dot q\|\sim10^{40}$）。\textbf{修订为 5a--5d}，阈值未动 \\
+2 & 副本同步对拍\textbf{假通过} & 测试自证 & \texttt{import} 缓存使「原件」实为副本 $\to$ 改 \texttt{importlib} 隔离加载 + \texttt{\_\_file\_\_} 守卫（红线 2） \\
+3 & OS 用例的 $\tilde q$ \textbf{恒为 0} & 指标不承载信息 & 评测层用实验者选定的 $q_d$ 重算（红线 3） \\
+4 & 判据 4（$K_P$ 单调性）\textbf{退化} & 判据不可证伪 & 标称下稳态误差理论恒为 0 $\Rightarrow$ \textbf{拆 4a/4b}，阈值未动 \\
+5 & 二阶参数辨识把\textbf{半周期当整周期} & 真 bug（会毁掉最强判据） & 对\textbf{带符号}误差取正极大值；否则 $(\hat\xi,\hat\omega_n)$ 会以「偏离 93\%」的假象收场（设定 $\xi{=}0.3,\omega_n{=}6$ 被辨识成 $0.1549,11.60$） \\
+6 & \textbf{6R 上 $K_P=\omega_n^2I$ 会让重力补偿类离散化失稳} & 口径（不是控制律错） & 重力补偿类按参考惯量标定 $\Lambda$；逆动力学类仍用书中原式 \\
+7 & 2R 的「控制用任务空间」取 \textbf{2 维位置子任务} & 用例设计（不是书的错误） & 3 维输出对应 $J_a$ 是 \textbf{3$\times$2 浸入}，而算法框写 $J_a^{-1}$——非方阵无逆，且 2 自由度臂本就无法独立指令 3 个任务坐标 \\
+8 & 判据 1 在 $dt=2$ ms 上有 \textbf{+2.93\% 系统偏差} & 离散化残差（不是控制律错） & 探针证明是 $O(dt)$ $\Rightarrow$ \textbf{改在 $dt=1$ ms 上判定}，阈值 2\% 未动（第~\ref{sec:dtprobe}~节） \\
+9 & 判据 3 未把「$J_a$ 列满秩」\textbf{定量化} & 判据缺前提 & \textbf{拆 3a/3b}：3a = 轨迹全程 $\operatorname{cond}(J_a)\le100$ 必须全收敛；3b 如实单列，阈值未动 \\
+10 & \textbf{\texttt{rk4\_step} 的 $q$ 更新只有一阶精度} & \textbf{真 bug} & 权重 $(a_1+2a_2+a_3)/6\to(a_1+a_2+a_3)/6$；经验阶 $1.000\to3.9926$；\textbf{实验三/四/五全部重跑}；\textbf{新增判据 7 作收敛阶守卫} \\
+11 & 判据 2（无源性）容差\textbf{被旧积分器撑着} & 判据假设过强 & 旧阈值 $10^{-10}$ 隐含「逐点单调」，只在\textbf{旧的一阶过度耗散}积分器下成立；正确 RK4 带 $\sim10^{-9}$ 可逆波动 $\Rightarrow$ 容差放宽到 $10^{-6}$、逐点改 $V\le V(0)(1{+}10^{-6})$。\textbf{鉴别力不受影响} \\
+12 & 实验五判据 2 的\textbf{三处口径不成立} & 口径错 & ① 衰减比改用\textbf{全程峰值}归一；② \texttt{in\_range} 改为\textbf{任务空间方向对照}（旧口径按关节给 $DQ_4=0.05$ rad，深奇异处把臂\textbf{推过奇异面}）；③ $T_{\text{SING}}$：0.4 $\to$ \textbf{1.2 s}；④ 新增失效判据「穿越奇异面」 \\
+13 & 摩擦实验的\textbf{步长 $\times$ 光滑宽度未配对} & 口径错 & 旧口径给硬性数 \textbf{1732}（超限 620 倍）$\Rightarrow$ 测到的是\textbf{数值伪爬行}。改为 $\varepsilon=0.2$、$dt=5\times10^{-4}$（2.17 $\le$ 2.785），并把分辨率写进归档 \\
+14 & 摩擦的 $F_c=0$ \textbf{守卫恒为假} & 守卫设计错 & 该档仍带粘性底噪（$10^{-2}$ 量级爬行残留）$\Rightarrow$ 改用\textbf{真零摩擦基线}作哨兵；守卫窗口由「末段」改「全程峰值」 \\
+15 & 判据 3 的理论参照取错 & 口径错 & 仿真层是 \textbf{ZOH 采样闭环}（$h\omega^*=2.1555$），不是连续反馈（2.7853）——用后者对照会把 $\approx1.3$ 倍差距误判成「实现有问题」 \\
+16 & 控制周期实验\textbf{用例选错} / 奇异观测量\textbf{选错} & 口径错 & 调节用例的稳态 ZOH 残差恒为 0 $\Rightarrow$ 改\textbf{跟踪}用例；奇异实验原用 $\|u\|_\infty$，被 $\|g\|_\infty\approx45$ N$\cdot$m 掩盖（斜率 $-0.001$ vs 理论 1）$\Rightarrow$ 改记 $\|u-g\|_\infty$ 与 $\ddot q$ \\
+17 & 仿真层控制器读到\textbf{冻结状态} & 真 bug & 加噪声钩子时写错分支，噪声关闭时控制器从 $t=0$ 起看同一状态。症状是「标称对照点带 0.12 rad 假残留」。\textbf{\texttt{noise=None} 时修复前后逐位一致}，故实验三/四既有归档不受影响 \\
+18 & 出图链路的三个坑 & 工程问题 & mathtext \texttt{\$\textbackslash sqrt2\$} 缺花括号 $\Rightarrow$ 9 张图只画 6 张（\textbf{归档已先落盘}）；图上 $\dag$/$\varepsilon$/$\Rightarrow$/上标在 Microsoft YaHei \textbf{缺字形}；图注折行会\textbf{切断数学模式}。最终口径：\textbf{图注一律纯文本 + 仅用已验证有字形的 Unicode} \\
+19 & 辅助流程清空主日志 & 工程问题 & \texttt{--figs-only} 曾以 \texttt{"w"} 打开 \texttt{run.log}，把 64.6 min 完整跑的唯一留档清空 $\Rightarrow$ 改独立 \texttt{figs\_only.log}，并新增 \texttt{restore\_stage4\_log.py} 由归档重建 \\
+20 & 实验五归档的\textbf{步长元数据笔误} & 元数据错（不影响任何实测数字） & \texttt{singular.dt\_s} 与 \texttt{noise.dt\_s} 都被写成 \texttt{DT4}(2 ms)，实际分别用 \texttt{DT4\_REF}(1 ms)。两侧均已修（代码 + 归档 + \texttt{post\_run\_refreshes} + 备份），\textbf{未重跑仿真} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{「书中已声明的前提」与「验证发现的缺陷」}\label{sec:premises}
+
+\textbf{（A）书中已声明的前提（不是书的错误）}如表~\ref{tab:premises} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{书中已声明的前提及其在验证中的表现}\label{tab:premises}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.6cm} p{2.6cm} p{10.3cm}@{}}
+\toprule
+前提 & 位置 & 验证中的表现 \\
+\midrule
+$J_a$ \textbf{列满秩} & OS 控制稳定性证明 & $\sigma_{\min}\to0$ 时 $J_a^{-1}$ 条件数爆炸。失效是\textbf{前提被违反}，不是控制律错误 \\
+$F_f$ \textbf{半正定}、需补偿 & 动力学方程 & 未补偿摩擦导致持续爬行/残留 \\
+$\dot x_e\approx J_a\dot q$ 为\textbf{一阶近似} & 正文速度关系 & 大误差下偏差 $\propto\delta^2$ \\
+机械臂\textbf{非冗余} & 书中注明 & 未做 7-DOF 边界测试 \\
+$K_P,K_D$ \textbf{具体取值未给定} & 正文 & 本报告一律按 $(\omega_n,\xi)$ 参数化并扫描 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\textbf{（B）验证过程自身发现的问题}：见第~\ref{sec:revisions}~节的 20 条——它们\textbf{全部已修或已修订口径}，
+且\textbf{没有任何一条改动过判据阈值}；其中属\textbf{被测代码真 bug} 的是 \#5（二阶参数辨识）、
+\#10（积分器阶数）、\#17（噪声钩子读到冻结状态）三条，其余为测试设计、口径或工程问题。
+
+\subsection{局限声明（本验证不能支持的结论）}
+
+\begin{enumerate}[leftmargin=2em,itemsep=4pt]
+\item \textbf{标称用例（实验三/四）的 plant 与控制器模型同源}，只证明「实现与书中公式自洽」。
+  排除「书模型自身错」依赖 \textbf{实验二}（已 PASS）；模型误差敏感度依赖 \textbf{实验五}（已 PASS）。
+  \textbf{两者都不能替代「真实机器人上的验证」。}
+\item \textbf{未建模效应全部不在范围内}：执行器动力学（电机、减速器、电流环）、
+  真实摩擦（含静摩擦/Stribeck）、柔性、传感器动态与延迟、通信抖动。
+  本报告的「模型」只有刚体动力学 + 显式摩擦项。
+\item \textbf{量化口径}：任务空间误差用等效臂长 $\ell=0.5$ m 的加权范数；
+  「误差含义随位形变化」——\textbf{脱离 $\sigma_{\min}(J_a)$ 谈精度无意义}。
+\item \textbf{6R 的惯量参数是估算值}（非官方 Puma 参数），故「绝对精度」类数字只在本模型内自洽。
+\item \textbf{摩擦模型是 $\tanh$ 光滑化的粘性+库仑}，\textbf{没有集值静摩擦}
+  $\Rightarrow$ 本报告不能对「静态死区/Stribeck 效应」下任何结论。
+\item \textbf{实时性是 Python 原型数字}，不能推广到工程实现。
+\item \textbf{统计口径}：固定种子 0 的 20 组初值 + 均值 $\pm$ 标准差；\textbf{未做跨种子重复}
+  $\Rightarrow$ 未评估种子依赖。
+\item \textbf{实验五的失稳阈值只测到两档 $dt$}，且机理对照只有单侧界
+  $\Rightarrow$ $h\omega^*$ 的「常数性」只在 20.9\% 的相对差内成立。
+\end{enumerate}
+
+%=======================================================================
+\section{结论}\label{sec:conclusion}
+%=======================================================================
+
+\subsection{算法验证判定（对应书里的 \dag{} 标注）}\label{sec:verdict}
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}c p{12.0cm} c@{}}
+\toprule
+算法 & 判定 & 依据 \\
+\midrule
+\textbf{JS 重力补偿 PD}（\texttt{algo:robctrl\_js\_pd}） & \textbf{已验证} &
+  实验三判据 1--4 全 PASS；实验四判据 2（无源性，正功占比 8.15e-10）、判据 3a（20/20）、
+  判据 4（130.0$\times$）、判据 5（63.1$\times$）全 PASS \\
+\textbf{JS 逆动力学 PD}（\texttt{algo:robctrl\_js\_invdyn}） & \textbf{已验证} &
+  实验三判据 1--4 全 PASS；实验四判据 1（最差 1.2764\% $<$ 2\%）、判据 3a（20/20）、
+  判据 4、判据 5 全 PASS \\
+\textbf{OS 重力补偿 PD}（\texttt{algo:robctrl\_os\_pd}） & \textbf{已验证}（\textbf{前提内}） &
+  实验三判据 1--4 全 PASS；实验四判据 3a（18/18，前提 $\operatorname{cond}(J_a)\le100$）、
+  判据 6（3.586e-16）、判据 4（136.3$\times$）全 PASS；2 组越前提初值如实列为 3b 边界样本 \\
+\textbf{OS 逆动力学 PD}（\texttt{algo:robctrl\_os\_invdyn}） & \textbf{已验证}（\textbf{前提内}） &
+  实验三判据 1--4 全 PASS；实验四判据 1（最差 0.5563\%）、判据 3a（20/20）、
+  判据 6（3.318e-15）全 PASS；奇异边界 $\sigma_{\min}=10^{-4}$ 如实报告 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{keybox}{「已验证」的语义（与 \texttt{2index.tex} 的 \dag{} 一致）}
+$=$ \textbf{提供了 Python 代码，且已按上述判据测试验证}。它与「结果是否写进正文」无关
+（本批次\textbf{不进正文}）。
+\textbf{前提}：OS 两算法标注为「前提内已验证」——书中 OS 稳定性证明已声明 $J_a$ 列满秩；
+本报告给出的失效点（\texttt{os\_pd}：$\sigma_{\min}\le5\times10^{-2}$；\texttt{os\_invdyn}：
+$\le10^{-4}$）是\textbf{该前提的定量边界}，不是「算法错」。
+\end{keybox}
+
+\subsection{本报告自身的达标情况}
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}c p{12.6cm} c@{}}
+\toprule
+\# & 要求 & 结论 \\
+\midrule
+1 & 覆盖验证计划全阶段与全部度量项，每一项都有结论或标注「未做/不适用」 & 实验一--五全部有实测表；未做项见第~\ref{sec:notdone}~节 \\
+2 & 每个数字都能在 \texttt{res/} 归档找到来源，且能用归档的种子/增益复跑 & 逐字段索引见附录~\ref{app:archive}；复现命令见第~\ref{sec:repro}~节与附录~\ref{app:commands} \\
+3 & 「负结果与局限」非空，至少含奇异边界与 $C$ 差分近似两项 & 第~\ref{sec:negative}~节等（含奇异失效点、$C$ 近似、$\dot x_e$ 一阶偏差、摩擦斜率、失稳阈值偏低等 12 项） \\
+4 & 报告自包含 & 不引用验证计划/运行日志即可读懂 \\
+5 & 全部图存于报告目录并用相对路径引用 & \texttt{figs/} \textbf{20 张}（图~\ref{fig:kp2r}--图~\ref{fig:instab}：实验三 $\times$4、实验四 $\times$7、实验五 $\times$9） \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{超出书本范围的建议（不可写成书中结论）}\label{sec:beyond}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.6cm} p{8.0cm} p{3.9cm}@{}}
+\toprule
+建议 & 依据 & 定性 \\
+\midrule
+\textbf{奇异附近用阻尼最小二乘（DLS）} 替代 $J_a^{-1}$ & 第~\ref{sec:singular}~节的 DLS 对照 & \textbf{书中未涉及}；本批次实测它\textbf{并未真正救回}该用例（衰减比仍上升，因为失效是「推不动的方向」）。只作建议 \\
+把 $C$ 升级为\textbf{解析 Christoffel / 复步微分} & 第~\ref{sec:c1sync}~节精度量化 & \textbf{不必要}（标称用例下不进入闭环）；若将来做\textbf{非同源}高精度用例可再评估，且须改 Part II 原件 \\
+\texttt{np.cross} 手写三元叉乘（省 1.4--1.5$\times$） & 耗时测量 profile & \textbf{属性能优化}，须改 Part II 已 \dag{} 原件；本批次\textbf{未获授权} \\
+重力补偿类在高 $\operatorname{cond}(B)$ 机器人上\textbf{按惯量标定 PD 增益} & 第~\ref{sec:method}~节、第~\ref{sec:peralgo}~节 & 严格说这是\textbf{工程实现建议}（书中未规定增益取法）；本批次是把它作为\textbf{避免离散化失稳}的必要口径 \\
+速度信号优先用\textbf{传感器直接测量}而非位置差分 & 第~\ref{sec:noise}~节（劣 142$\times$） & 属\textbf{工程建议}；书中只说「状态来自传感器/滤波器」 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{对后续批次的交接（阻抗 / 导纳 / 零力 / 力位混合控制）}\label{sec:handover}
+
+\textbf{已具备、可直接复用}：
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{仿真层}：\texttt{code/code\_sim.py}——RK4 定步长、控制零阶保持、
+  \textbf{外力注入 $\tau_e$/$F_e$}、摩擦（粘性+库仑 $\tanh$）、测量噪声（含位置差分 + 低通）、
+  全量记录（含 $\sigma_{\min}/\sigma_{\max}(J_a)$、$\operatorname{cond}(B)$、$u-g$、$g$、NaN 标记）；
+\item \textbf{模型库}：\texttt{model/}（FK / 雅可比 / \textbf{$\dot J_a$} / $B,C,g$）
+  + \texttt{code/code\_models.py}（2R/6R 参数唯一定义处、\texttt{RobotCase} 用例接口、
+  \texttt{perturb\_params} 参数失配）；
+\item \textbf{参数失配能力}：\texttt{make\_case(name, plant=...)}
+  （\texttt{mass\_scale}/\texttt{inertia\_scale}/\texttt{com\_scale}/\texttt{gravity\_scale}）——
+  「控制器用标称模型、plant 用失配模型」的红线已落地；
+\item \textbf{度量与出图}：\texttt{code/code\_metrics.py}（指标、二阶辨识、图注自动折行、
+  \textbf{已知字形约束}）；
+\item \textbf{并行驱动}：\texttt{test/ctrl\_common/run\_ic\_worker.py}（子进程 + 文件重定向，
+  \textbf{不用管道}——本沙箱禁用命名管道）；
+\item \textbf{验证流水线规矩}（实验四/五的教训，务必沿用）：
+  \stage{1} \textbf{先写 \texttt{result.json}、再出图}（出图整体包 \texttt{try}，
+  失败只记 \texttt{figure\_error}）；
+  \stage{2} \textbf{改出图代码用 \texttt{--figs-only} 验证，不重跑仿真}；
+  \stage{3} \textbf{辅助流程不得覆盖主产物}（\texttt{run.log}）；
+  \stage{4} 图上\textbf{只用纯文本 + 已验证有字形的 Unicode}，不写数学模式；
+  \stage{5} 长任务前先跑\textbf{全链路 \texttt{--quick} 冒烟}。
+\end{itemize}
+
+\textbf{缺失、后续批次需要补的}如表~\ref{tab:gaps} 所示。
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{后续批次需要补齐的接口}\label{tab:gaps}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{2.2cm} p{13.3cm}@{}}
+\toprule
+缺口 & 说明 \\
+\midrule
+\textbf{接触模型} & 书中力控是「刚性约束 $\bar S\dot x_e=0$ + 弹性接触 $F_e=K_e\bar S(x_e-x_{ec})$」，\textbf{不能用 MuJoCo 的罚函数软接触直接对拍}（物理不同）。建议自己实现该约束/弹性模型，或引入专门的接触求解 \\
+\textbf{力/力矩传感器仿真} & 当前仿真层没有力传感通道（只有状态测量噪声）——力控批次需要 $F_e$ 的测量模型（含噪声、偏置、滤波） \\
+\textbf{执行器与关节级模型} & 独立关节 PID/ADRC 批次可能需要电机模型（电压/电流/摩擦） \\
+\textbf{零力/导纳控制所需的轨迹级接口} & 需要对 $x_d$ 做在线修改（导纳）而非解析给定——现有 \texttt{code\_traj.py} 只支持解析轨迹 \\
+\textbf{真正的实时性评估} & 若要论证「实时动力学计算」，必须离开 Python 原型 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{结语}
+
+本批次的结论可以概括为三句话：
+
+\begin{keybox}{三句话结论}
+\textbf{（i）模型可信}——书中运动学/雅可比/动力学的实现与权威实现 Pinocchio 一致到机器精度，
+且对拍已被失配自检证明有鉴别力；
+\textbf{（ii）控制律可信}——4 个算法在完整 6R 上通过了收敛性、误差动态精确性、无源性/映射正确性、
+分工与耦合抑制四类证据，其中最硬的误差动态判据最差 1.2764\%（阈值 2\%），
+且其残差被证明是离散化 $O(dt)$ 残差而非控制律误差；
+\textbf{（iii）边界已知}——两个 OS 算法的失效点被定量给出（\texttt{os\_pd}：推不动；
+\texttt{os\_invdyn}：力矩爆），它们落在书中\textbf{已声明}的「$J_a$ 列满秩」前提之外，
+属前提的边界而非书的缺陷；同时本报告如实列出 12 条负结果、8 项未做测试与 8 条局限，
+其中最需要注意的是「标称用例同源」这一根本性限制：
+\textbf{上述全部结论都不能替代真实机器人上的验证}。
+\end{keybox}
+
+\clearpage
+\appendix
+
+%=======================================================================
+\section{复现命令清单}\label{app:commands}
+%=======================================================================
+
+{\footnotesize
+\begin{verbatim}
+$env:PYTHONUTF8='1'
+$PY = 'E:\Anaconda3\envs\py311-gym\python.exe'
+$RC = 'D:\Projects\2024_MN4R\4-MT4R-github\Robot-Control'
+
+# -- 每次开工前：确认模型副本与 Codes/ 原件同版（实验一判据 1，秒级）
+& $PY "$RC\test\model\test_model_sync.py"
+
+# -- 实验一：模型自检（7 条判据，约 71 s）-> res/model_stage0/
+& $PY "$RC\test\model\run_stage0.py"
+#    单项：
+& $PY "$RC\test\model\test_jacobian_dot.py"     # 判据 2、3
+& $PY "$RC\test\model\test_convention.py"    # 判据 4、5a-5d、6、7
+
+# -- 实验二：Pinocchio 权威对拍（5 项 + 失配自检）-> res/model_stage1/
+#    必须用 py311-pin 解释器（脚本内已把其 Library\bin 加进 PATH）
+& 'D:\Projects\2024_MN4R\.envs\py311-pin\python.exe' `
+      "$RC\test\model\test_model_pinocchio.py"
+
+# -- 实验三：仿真层 + 2R 用例（约 10.1 min，607.8 s）-> res/2r_stage2/
+& $PY "$RC\test\ctrl_common\run_stage2.py" --workers 6
+#    单算法（2R，四条判据）：
+& $PY "$RC\test\ctrl_js\test_js_pd.py"      --quick
+& $PY "$RC\test\ctrl_js\test_js_invdyn.py"  --quick
+& $PY "$RC\test\ctrl_os\test_os_pd.py"      --quick
+& $PY "$RC\test\ctrl_os\test_os_invdyn.py"  --quick
+
+# -- 实验四：6R 正式验证（约 41.7 min，2504.6 s）-> res/6r_stage3/
+& $PY "$RC\test\ctrl_common\run_stage3.py" --workers 6
+#    单算法（算法内判据）：
+& $PY "$RC\test\ctrl_js\test_js_invdyn.py"  --stage3   # 判据 1 + 3
+& $PY "$RC\test\ctrl_js\test_js_pd.py"      --stage3   # 判据 2 + 3
+& $PY "$RC\test\ctrl_os\test_os_invdyn.py"  --stage3   # 判据 1 + 3
+& $PY "$RC\test\ctrl_os\test_os_pd.py"      --stage3   # 判据 3
+
+# -- 实验四辅助工具（probe 会跑仿真，约 6-9 min/次）
+& $PY "$RC\scripts\probe_fit_dt.py" --T 2.4 --dts 2e-3,1e-3,5e-4 `
+      --out "$RC\res\6r_stage3\probe_fit_dt.json"
+& $PY "$RC\scripts\probe_fit_dt.py" --T 3.0 --dts 2e-3,1e-3 `
+      --out "$RC\res\6r_stage3\probe_fit_dt_T30.json"
+& $PY "$RC\scripts\refresh_archive_probe.py"   # 重跑探针后回填 result.json
+& $PY "$RC\scripts\summarize_stage3.py" --md "$RC\res\6r_stage3\summary.md"
+& $PY "$RC\scripts\smoke_figures.py"           # 出图链路烟雾测试（7 张图，秒级）
+
+# -- 实验五：鲁棒性与边界（约 64.6 min，3877.1 s）-> res/6r_stage4/
+& $PY "$RC\test\ctrl_common\run_stage4.py" --workers 6
+#    单项入口：
+& $PY "$RC\test\ctrl_common\test_robust.py" --only mismatch
+& $PY "$RC\test\ctrl_os\test_os_singular.py" --quick
+#    改出图代码后（秒级，不跑仿真）：
+& $PY "$RC\scripts\smoke_stage4_figures.py"    # 审图上文字是否有缺字形字符
+& $PY "$RC\test\ctrl_common\run_stage4.py" --figs-only
+& $PY "$RC\scripts\restore_stage4_log.py"      # 由归档重建 run.log
+\end{verbatim}
+}
+
+\begin{warnbox}{两条使用注意}
+\stage{1} \texttt{--quick} \textbf{会覆盖同名归档}，且判据结论无意义（压缩时长会制造伪影）——
+跑完冒烟必须重跑完整版。
+\stage{2} 长任务用\textbf{后台}运行；本机实测可用算力约 2--2.5 核，\texttt{--workers 6} 已饱和。
+\end{warnbox}
+
+%=======================================================================
+\section{归档文件索引}\label{app:archive}
+%=======================================================================
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}p{3.9cm} p{8.1cm} p{2.2cm}@{}}
+\toprule
+归档路径（相对 \texttt{res/}） & 关键字段 & 对应小节 \\
+\midrule
+\texttt{model\_stage0/result.json} & \texttt{criteria[7]}、\texttt{criterion\_revisions[3]}、\texttt{notes[6]}、\texttt{env}、\texttt{wall\_time\_s}=70.55 & 第~\ref{sec:exp1}、\ref{sec:revisions}~节 \\
+\texttt{model\_stage0/run.log} & 完整 stdout（含实时进度） & 第~\ref{sec:exp1}~节 \\
+\texttt{model\_stage1/result.json} & \texttt{pinocchio\{version,numpy,python,interpreter\}}、\texttt{cases\{2r,6r\}.items\{fk,B,g,Cqdot,Jw\}}、\texttt{assembly.fit\_residual}、\texttt{mismatch\{2r,6r\}} & 第~\ref{sec:exp2}~节 \\
+\texttt{2r\_stage2/result.json} & \texttt{criteria[4]}、\path{algorithms[4].table}（均值 $\pm$ 标准差）、\texttt{checks.kp\_monotone.measured.disturbance}、\texttt{tracking\_smoke}、\texttt{seed}=0 & 第~\ref{sec:exp3}~节 \\
+\texttt{2r\_stage2/figs/*.png} & \texttt{err\_curves\_2r}、\texttt{torque\_curves\_2r}、\texttt{phase\_portrait\_2r}、\texttt{kp\_sweep\_2r} & 第~\ref{sec:exp3}~节 \\
+\texttt{6r\_stage3/result.json} & \texttt{criteria[6]}、\texttt{algorithms[4]}（\texttt{table}/\texttt{checks}/\texttt{extras}/\texttt{ic\_rows}）、\texttt{division\_of\_labor}、\texttt{coupling}、\texttt{os\_mapping}、\texttt{os\_kp\_sweep}、\texttt{linearization\_bias}、\texttt{fit\_dt\_probe}、\texttt{wall\_time\_s}=2504.65 & 第~\ref{sec:exp4}、\ref{sec:negative}~节 \\
+\texttt{6r\_stage3/figs/*.png} & \texttt{err\_curves\_6r}、\texttt{torque\_curves\_6r}、\texttt{logdec\_fit\_6r}、\texttt{speed\_compare\_6r}、\texttt{coupling\_6r}、\texttt{passivity\_6r}、\texttt{kp\_sweep\_6r} & 第~\ref{sec:exp4}~节 \\
+\texttt{6r\_stage3/probe\_fit\_dt.json} & \texttt{rows}（$dt=2/1/0.5$ ms 逐分量 \texttt{xi\_hat/wn\_hat/xi\_rel\_err}）、\texttt{T\_s}=2.4 & 第~\ref{sec:dtprobe}~节 \\
+\texttt{6r\_stage3/probe\_fit\_dt\_T30.json} & 同上，\texttt{T\_s}=3.0（\textbf{判定口径}） & 第~\ref{sec:dtprobe}~节 \\
+\texttt{6r\_stage3/summary.md} & 人读摘要（由 \texttt{result.json} 压成） & --- \\
+\texttt{6r\_stage3/run\_attempt1.log}、\texttt{run\_attempt2\_crash.log} & \textbf{失败留档（勿删）}：判据口径问题与出图 bug 的原始证据 & 第~\ref{sec:revisions}~节 \#18 \\
+\texttt{6r\_stage4/result.json} & \texttt{criteria[3]}、\texttt{singularity}（\texttt{levels}/\texttt{rows}/\texttt{failure\_point}/\texttt{direction\_contrast}/\texttt{scaling}/\texttt{dls\_compare}/\texttt{dt\_refine}）、\texttt{model\_mismatch}、\texttt{friction}、\texttt{measurement\_noise}、\texttt{control\_period}、\texttt{discretization\_instability}、\texttt{compute\_cost}、\texttt{post\_run\_refreshes}、\texttt{wall\_time\_s}=3877.12 & 第~\ref{sec:exp5}、\ref{sec:negative}~节 \\
+\texttt{6r\_stage4/figs/*.png} & 9 张（\texttt{singular\_err}、\texttt{singular\_u}、\texttt{mismatch\_mass}、\texttt{mismatch\_inertia}、\texttt{friction\_coulomb}、\texttt{friction\_shapes}、\texttt{noise}、\texttt{period}、\texttt{instability}） & 第~\ref{sec:exp5}~节 \\
+\texttt{6r\_stage4/run.log}、\texttt{figs\_only.log} & 主日志（\textbf{重建版}，数字与归档逐位相同；并行进度行耗时无法恢复）与辅佐日志 & 第~\ref{sec:exp5}~节 \\
+\texttt{*/pre\_rk4fix\_result.json}、\texttt{pre\_rk4fix\_run.log} & \textbf{作废留档（勿删）}：积分器 bug 修正前的旧数字 & 第~\ref{sec:revisions}~节 \#10 \\
+\texttt{report/figs/}（本报告目录） & 本报告引用的 20 张图（由上述 \texttt{figs/} 复制） & 全文 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+%=======================================================================
+\section{环境与版本}\label{app:env}
+%=======================================================================
+
+{\footnotesize
+\begin{verbatim}
+# 主验证回路（实验一、三、四、五）
+python      3.11.9
+executable  E:\Anaconda3\envs\py311-gym\python.exe
+numpy       2.1.0
+scipy       1.17.0
+matplotlib  3.10.6
+platform    Windows-10-10.0.19045-SP0
+pinocchio   未安装（实验一、三、四、五均不依赖它）
+
+# 实验二专用（独立 env，不动 py311-gym）
+D:\Projects\2024_MN4R\.envs\py311-pin\python.exe
+python      3.11.16
+numpy       2.4.6
+pinocchio   4.1.0
+\end{verbatim}
+}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=3pt]
+\item \texttt{py311-gym} 的依赖是\textbf{已对齐}的（CartPole 与其他验证共用），
+  故 Pinocchio 装在\textbf{工作区本地独立 env}；\texttt{pip install pin} 在 Windows 上\textbf{无轮子}
+  （官方 README 写明 pip 仅 Linux），只能用 conda-forge。
+\item 运行 \texttt{py311-pin} 时必须先把其 \texttt{Library\textbackslash bin} 加入 \texttt{PATH}
+  （且早于 \texttt{import numpy}），否则 numpy 的 MKL \textbf{延迟加载失败}
+  （连 \texttt{A @ A} 都崩，退出码 \texttt{0xc06d007f}）。
+\item 本机 CPU 8 核，但\textbf{实测可用算力约 2--2.5 核}（BLAS 线程数 1/2/4/8 无加速），
+  故 \texttt{--workers 6} 已饱和（并行收益 $\sim$1.8$\times$），加 worker 无益。
+\end{itemize}
+
+%=======================================================================
+\section*{附注：版本与改动范围}
+\addcontentsline{toc}{section}{附注：版本与改动范围}
+%=======================================================================
+
+本版为 \textbf{LaTeX 排版版（v2.1）}：把 v2.0 的 Markdown 报告迁移为可独立编译的
+XeLaTeX 文档（\texttt{ctexart} + \texttt{booktabs} + \texttt{tcolorbox}），
+图题统一控制在 15 个汉字宽度以内，图的解释全部写在正文中并以「如图~$X$~所示……」的方式关联；
+\textbf{技术内容、全部实测数字与四项算法判定与 v2.0 完全一致}。
+v2.0 为\textbf{格式重写}版（论文式结构、图表编号化、四段式实验叙述）；
+v1.0 原文留档为同目录 \path{part4-motion-control-verify-report.v1.bak.md}。
+
+\end{document}

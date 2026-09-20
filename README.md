@@ -54,18 +54,19 @@ I believe this book will provide a unique experience and become a valuable assis
 
 ## 配套代码 / Supporting Code
 
-本书配套代码位于本仓库两个顶层目录：
+本书配套代码位于本仓库三个顶层目录：
 
-The book's supporting code lives in two top-level directories of this repository:
+The book's supporting code lives in three top-level directories of this repository:
 
 | 目录 / Directory | 内容 / Contents |
 |---|---|
 | `Codes/` | 按书章节组织的算法实现（`chap<部分>_<小节>_<主题>/`），覆盖 Part I–VII：最优化、插值、运动学、动力学、滤波器、LQR、深度学习、强化学习、视觉导航等 / Chapter-by-chapter algorithm implementations (`chap<part>_<section>_<topic>/`) covering Parts I–VII: optimization, interpolation, kinematics, dynamics, filters, LQR, deep learning, reinforcement learning, visual navigation. |
 | `CartPole/` | Part VIII（一阶倒立摆）配套仿真与控制实验代码：经典控制（随机 / PID / 连续与离散 LQR / MPC / DDP / iLQR）与强化学习（REINFORCE、Actor-Critic、PPO 系列），含统一评估与训练脚本 / Supporting simulation and control experiments for Part VIII (first-order inverted pendulum): classical control (random / PID / continuous & discrete LQR / MPC / DDP / iLQR) and reinforcement learning (REINFORCE, Actor-Critic, PPO variants), with unified evaluation and training scripts. |
+| `Robot-Control/` | Part IV（机器人控制）配套仿真与控制验证代码：运动控制（关节空间 / 操作空间的重力补偿 PD 与逆动力学控制），含自建仿真层、模型自检与验证脚本，相对独立自包含 / Supporting simulation and verification code for Part IV (robot control): motion control (joint-space / operational-space gravity-compensated PD and inverse-dynamics control), with a self-contained simulation layer, model self-checks and verification scripts. |
 
-`Codes/` 中的实现与书中算法框、公式一一对应（见各章节正文的代码块）；`CartPole/` 的目录结构、运行方式与已知问题见 `CartPole/AGENTS.md`。`CartPole/res/`、`CartPole/src-rl/res/` 下的训练产物（模型权重、训练日志等）保留在本地、不纳入版本控制。
+`Codes/` 中的实现与书中算法框、公式一一对应（见各章节正文的代码块）；`CartPole/` 的目录结构、运行方式与已知问题见 `CartPole/AGENTS.md`，`Robot-Control/` 见 `Robot-Control/AGENTS.md`。`CartPole/res/`、`CartPole/src-rl/res/`、`Robot-Control/res/` 下的实验/训练产物（模型权重、训练日志、结果归档等）保留在本地、不纳入版本控制。
 
-Implementations under `Codes/` correspond one-to-one with the algorithm boxes and formulas in the book. For the structure, usage, and known issues of `CartPole/`, see `CartPole/AGENTS.md`. Training artifacts under `CartPole/res/` and `CartPole/src-rl/res/` (model weights, training logs, etc.) are kept locally and are not version-controlled.
+Implementations under `Codes/` correspond one-to-one with the algorithm boxes and formulas in the book. For the structure, usage, and known issues of `CartPole/`, see `CartPole/AGENTS.md`; for `Robot-Control/`, see `Robot-Control/AGENTS.md`. Experiment/training artifacts under `CartPole/res/`, `CartPole/src-rl/res/` and `Robot-Control/res/` (model weights, training logs, result archives, etc.) are kept locally and are not version-controlled.
 
 
 ## Feedback and Sharing / 反馈与分享
