@@ -303,7 +303,7 @@ def load_policy_ckpt(path, obs_dim, act_dim, hidden_sizes=(64, 64),
     - obs_rms: 恢复到存档均值/方差/计数的 `RunningMeanStd`；
     - meta: 训练时写入的超参 dict（env/seed/n_iters/…）。
     """
-    ckpt = torch.load(path, map_location=device)
+    ckpt = torch.load(path, map_location=device, weights_only=True)
     policy = PolicyNetwork(obs_dim, act_dim, hidden_sizes=hidden_sizes,
                            init_log_std=init_log_std).to(device)
     policy.load_state_dict(ckpt["policy"])
@@ -354,7 +354,7 @@ def load_ac_checkpoint(path, obs_dim, act_dim, hidden_sizes=(64, 64),
     - optimizer / value_optimizer: optimizer `state_dict`（ckpt 缺失则 None），
       供 `2_ac.py` 断点续训时加载到新建的优化器上。
     """
-    ckpt = torch.load(path, map_location=device)
+    ckpt = torch.load(path, map_location=device, weights_only=True)
     policy = PolicyNetwork(obs_dim, act_dim, hidden_sizes=hidden_sizes,
                            init_log_std=init_log_std).to(device)
     policy.load_state_dict(ckpt["policy"])
